@@ -25,6 +25,15 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
             detail="API key is not authorized for this project",
         )
 
+    project_doc = await request.app.state.db["projects"].find_one(
+        {"_id": payload.project_id}, {"_id": 1}
+    )
+    if not project_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{payload.project_id}' not found",
+        )
+
     run_id = generate_run_id()
     now = datetime.now(timezone.utc)
     estimated_duration_s = ESTIMATED_DURATION_BY_SUITE[payload.test_suite]

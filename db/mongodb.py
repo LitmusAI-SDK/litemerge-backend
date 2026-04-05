@@ -35,9 +35,16 @@ async def bootstrap_api_key(db: AsyncIOMotorDatabase, raw_api_key: str) -> None:
                 "key_hash": key_hash,
                 "name": "bootstrap-local-key",
                 "project_ids": [],
-                "scopes": ["runs:create", "runs:read"],
+                "scopes": [
+                    "runs:create",
+                    "runs:read",
+                    "projects:create",
+                    "projects:read",
+                    "projects:update",
+                ],
                 "is_active": True,
                 "created_at": now,
+                "updated_at": now,
             }
         },
         upsert=True,

@@ -11,7 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 SETTINGS_COLLECTION = "settings"
 SETTINGS_DOC_ID = "litmusai_settings"
-MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "versions"
 
 
 @dataclass(frozen=True)

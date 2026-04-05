@@ -1,8 +1,140 @@
-from fastapi import APIRouter
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, Request, status
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+
+from api.schemas.projects import (
+    AuthConfigInput,
+    AuthConfigPublic,
+    ProjectCreateRequest,
+    ProjectListResponse,
+    ProjectPatchRequest,
+    ProjectResponse,
+)
+from core.crypto import encrypt_secret
+from core.security import generate_project_id
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-@router.get("")
-async def list_projects() -> dict[str, list[dict[str, str]]]:
-    return {"items": []}
+def _auth_storage(config: AuthConfigInput) -> dict:
+    return {
+        "type": config.type,
+        "value_encrypted": encrypt_secret(config.value) if config.value else None,
+        "header_name": config.header_name,
+    }
+
+
+def _to_project_response(project_doc: dict) -> ProjectResponse:
+    auth_config = project_doc.get("auth_config", {})
+
+    return ProjectResponse(
+        id=project_doc["_id"],
+        name=project_doc["name"],
+        agent_endpoint=project_doc["agent_endpoint"],
+        auth_config=AuthConfigPublic(
+            type=auth_config.get("type", "none"),
+            header_name=auth_config.get("header_name"),
+            has_value=bool(auth_config.get("value_encrypted")),
+        ),
+        owner_id=project_doc["owner_id"],
+        schema_hints=project_doc.get("schema_hints"),
+        created_at=project_doc["created_at"],
+        updated_at=project_doc["updated_at"],
+    )
+
+
+def _ensure_project_access(project_id: str, api_key_record: dict) -> None:
+    allowed_projects = api_key_record.get("project_ids", [])
+    if allowed_projects and project_id not in allowed_projects:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API key is not authorized for this project",
+        )
+
+
+@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project(payload: ProjectCreateRequest, request: Request) -> ProjectResponse:
+    now = datetime.now(timezone.utc)
+    project_id = payload.id or generate_project_id()
+    project_doc = {
+        "_id": project_id,
+        "name": payload.name,
+        "agent_endpoint": str(payload.agent_endpoint),
+        "auth_config": _auth_storage(payload.auth_config),
+        "owner_id": payload.owner_id,
+        "schema_hints": payload.schema_hints,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    try:
+        await request.app.state.db["projects"].insert_one(project_doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Project with id '{project_id}' already exists",
+        ) from exc
+
+    api_key_record = getattr(request.state, "api_key_record", {})
+    allowed_projects = api_key_record.get("project_ids", [])
+
+    if allowed_projects:
+        await request.app.state.db["api_keys"].update_one(
+            {"_id": api_key_record["_id"]},
+            {
+                "$addToSet": {"project_ids": project_id},
+                "$set": {"updated_at": now},
+            },
+        )
+
+    return _to_project_response(project_doc)
+
+
+@router.get("", response_model=ProjectListResponse)
+async def list_projects(request: Request) -> ProjectListResponse:
+    api_key_record = getattr(request.state, "api_key_record", {})
+    allowed_projects = api_key_record.get("project_ids", [])
+
+    query: dict = {}
+    if allowed_projects:
+        query["_id"] = {"$in": allowed_projects}
+
+    cursor = request.app.state.db["projects"].find(query).sort("created_at", -1)
+    items = [_to_project_response(doc) async for doc in cursor]
+    return ProjectListResponse(items=items)
+
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def patch_project(
+    project_id: str, payload: ProjectPatchRequest, request: Request
+) -> ProjectResponse:
+    api_key_record = getattr(request.state, "api_key_record", {})
+    _ensure_project_access(project_id, api_key_record)
+
+    update_fields: dict = {}
+
+    if payload.name is not None:
+        update_fields["name"] = payload.name
+    if payload.agent_endpoint is not None:
+        update_fields["agent_endpoint"] = str(payload.agent_endpoint)
+    if payload.owner_id is not None:
+        update_fields["owner_id"] = payload.owner_id
+    if payload.schema_hints is not None:
+        update_fields["schema_hints"] = payload.schema_hints
+    if payload.auth_config is not None:
+        update_fields["auth_config"] = _auth_storage(payload.auth_config)
+
+    update_fields["updated_at"] = datetime.now(timezone.utc)
+
+    updated = await request.app.state.db["projects"].find_one_and_update(
+        {"_id": project_id},
+        {"$set": update_fields},
+        return_document=ReturnDocument.AFTER,
+    )
+
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    return _to_project_response(updated)

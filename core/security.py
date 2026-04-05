@@ -8,3 +8,7 @@ def hash_api_key(api_key: str) -> str:
 
 def generate_run_id() -> str:
     return f"run_{secrets.token_hex(6)}"
+
+
+def generate_project_id() -> str:
+    return f"proj_{secrets.token_hex(6)}"

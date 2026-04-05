@@ -1,6 +1,6 @@
 # litemerge-backend
 
-Phase 1A backend scaffold for LitmusAI, adapted to MongoDB.
+Phase 1A + 1B backend scaffold for LitmusAI, adapted to MongoDB.
 
 ## What this includes
 
@@ -10,8 +10,10 @@ Phase 1A backend scaffold for LitmusAI, adapted to MongoDB.
 	- `/v1/projects`
 	- `/v1/reports`
 - MongoDB persistence for API keys and runs
-- MongoDB migration runner using scripts in `alembic/versions`
+- MongoDB migration runner using scripts in `db/versions`
 - Singleton `settings` document to track DB schema version metadata
+- Project CRUD (`POST /v1/projects`, `GET /v1/projects`, `PATCH /v1/projects/{id}`)
+- Encrypted storage for project auth config secrets (`auth_config.value`)
 - API key middleware (`x-api-key`) checked against Mongo `api_keys`
 - Celery + Redis worker scaffold
 - Docker Compose stack for local development
@@ -36,6 +38,12 @@ Use it in requests:
 x-api-key: lmai_dev_key
 ```
 
+Auth config encryption uses:
+
+```bash
+SECRETS_ENCRYPTION_KEY=replace-with-a-long-random-secret
+```
+
 ## Trigger a run
 
 ```bash
@@ -51,12 +59,11 @@ curl -X POST http://localhost:8000/v1/runs \
 
 ## Notes
 
-- This is Phase 1A scaffold. Project CRUD/auth-config management from Session 1B is not implemented yet.
-- The `alembic/versions` folder is used as a MongoDB migration script directory.
+- The `db/versions` folder is used as a MongoDB migration script directory.
 
 ## MongoDB migrations
 
-- Migration files live in `alembic/versions`.
+- Migration files live in `db/versions`.
 - Each migration script must define:
 	- `VERSION = <int>`
 	- `async def upgrade(db) -> None`
