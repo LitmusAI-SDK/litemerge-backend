@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from api.middleware import ApiKeyAuthMiddleware
 from api.routes import health, projects, reports, runs
 from core.config import settings
+from db.migrations import run_migrations
 from db.mongodb import bootstrap_api_key, create_mongo_client, get_database, init_indexes
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,10 @@ async def lifespan(app: FastAPI):
     app.state.db = get_database(app.state.mongo_client, settings.mongodb_db)
 
     try:
+        applied_migrations = await run_migrations(app.state.db)
+        if applied_migrations:
+            logger.info("Applied MongoDB migrations: %s", ", ".join(applied_migrations))
+
         await init_indexes(app.state.db)
         await bootstrap_api_key(app.state.db, settings.bootstrap_api_key)
         app.state.db_ready = True
