@@ -11,17 +11,18 @@ requires-python = ">=3.11"
 dependencies = [
   "celery[redis]>=5.4.0",
   "fastapi>=0.115.0",
+  "httpx>=0.28.0",
   "motor>=3.6.0",
   "pydantic-settings>=2.5.0",
   "pymongo>=4.9.0",
-  "uvicorn[standard]>=0.30.0"
+  "uvicorn[standard]>=0.30.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.27.0",
+  "anyio>=4.0.0",
   "pytest>=8.3.0",
-  "ruff>=0.6.9"
+  "ruff>=0.6.9",
 ]
 
 [tool.pytest.ini_options]
@@ -33,4 +34,4 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["api*", "core*", "db*", "worker*"]
+include = ["api*", "caller*", "core*", "db*", "worker*"]

@@ -5,15 +5,20 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from api.schemas.projects import (
+    AMBER_LATENCY_MS,
     AuthConfigInput,
     AuthConfigPublic,
+    PreflightResponse,
     ProjectCreateRequest,
     ProjectListResponse,
     ProjectPatchRequest,
     ProjectResponse,
 )
+from caller.agent_caller import AgentCaller
 from core.crypto import encrypt_secret
 from core.security import generate_project_id
+
+_PREFLIGHT_PROBE = "Hello, can you help me?"
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -138,3 +143,35 @@ async def patch_project(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
     return _to_project_response(updated)
+
+
+@router.post("/{project_id}/preflight", response_model=PreflightResponse)
+async def preflight_project(project_id: str, request: Request) -> PreflightResponse:
+    """Send one neutral probe to the customer's agent and report connectivity health.
+
+    Returns:
+        green  — 200 reply received, latency under 2 s.
+        amber  — 200 reply received but latency >= 2 s (slow but reachable).
+        red    — timeout, non-200, or unparseable/missing reply field.
+    """
+    api_key_record = getattr(request.state, "api_key_record", {})
+    _ensure_project_access(project_id, api_key_record)
+
+    project_doc = await request.app.state.db["projects"].find_one({"_id": project_id})
+    if not project_doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    caller = AgentCaller(project_doc)
+    result = await caller.send(
+        message=_PREFLIGHT_PROBE,
+        session_id=f"litmusai-preflight-{project_id}",
+        history=[],
+    )
+
+    if result.error:
+        return PreflightResponse(status="red", latency_ms=result.latency_ms, error=result.error)
+
+    if result.latency_ms >= AMBER_LATENCY_MS:
+        return PreflightResponse(status="amber", latency_ms=result.latency_ms)
+
+    return PreflightResponse(status="green", latency_ms=result.latency_ms)

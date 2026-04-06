@@ -39,6 +39,28 @@
     - `bearer`, `apikey`, `basic`, `none`
   - Auth secrets stored as encrypted strings in Mongo.
   - API key project scoping integrated into project listing and run authorization.
+- Completed: Phase 2A
+  - `backend/caller/` package with `AgentCaller` class and `CallerResult` dataclass.
+  - `AgentCaller(project_doc)` accepts a MongoDB project document directly.
+  - Auth applied per type: `bearer` → `Authorization: Bearer`, `apikey` → custom header, `basic` → `Authorization: Basic` (base64), `none` → no auth headers.
+  - Request body field names mapped via `schema_hints` (default: `message`, `session_id`, `conversation_history`); response `reply` field also remappable.
+  - `X-LitmusAI-Session: {session_id}` passthrough header always sent.
+  - 30s default timeout; errors (timeout, network, non-200, bad JSON, missing reply) surface via `result.error`, never raised.
+  - `CallerResult.ok` property: True only when `reply` is populated and `error` is None.
+  - 14 unit tests in `tests/test_agent_caller.py` covering all auth types, schema remapping, and all error paths.
+- Completed: Phase 2B
+  - `POST /v1/projects/{id}/preflight` — sends one neutral probe to the customer's agent via `AgentCaller`.
+  - Status classification: `green` (200 + reply + latency < 2000 ms), `amber` (200 + reply + latency >= 2000 ms), `red` (any error).
+  - Response: `{ status, latency_ms, error? }`.
+  - Full auth middleware chain applies (API key lookup, project access check, 404 if project missing).
+  - Session ID sent as `litmusai-preflight-{project_id}` so customers can filter probe traffic in their logs.
+  - 11 integration tests in `tests/test_preflight.py`.
+
+## Known schema_hints Gaps (to address in Phase 3)
+`AgentCaller` currently handles flat field-name remapping only. Three cases are deferred:
+1. **Nested response extraction** — e.g. `choices[0].message.content` (OpenAI-style). Needs dot/index path support in `schema_hints["reply"]`.
+2. **Stateful endpoints** — agents that track history server-side reject `conversation_history` in the body. Needs a `send_history: false` hint.
+3. **Extra required body fields** — some APIs require fixed params (`model`, `temperature`). Needs a `static_body_fields: dict` hint in project config.
 
 ## MongoDB Migration Strategy
 - Migration scripts are stored in `backend/db/versions`.
@@ -70,18 +92,25 @@
 - `SECRETS_ENCRYPTION_KEY`
 - `AUTH_EXEMPT_PATHS`
 
-## Common Backend Commands
-- Start stack: `docker compose up --build`
-- Run tests: `python -m pytest -q`
+## Tooling — venv and uv
+- The Python virtualenv lives at `backend/venv/`. Always use it — never the system Python.
+- **Run tests:** `venv/Scripts/python -m pytest -q` (run from `backend/`)
+- **Install a package:** `uv pip install --python venv/Scripts/python <package>` (run from `backend/`)
+- **Install all deps:** `uv pip install -r requirements.txt --python venv/Scripts/python`
+- **Start stack:** `docker compose up --build`
+- Async tests use `@pytest.mark.anyio` — `trio` is not installed, only `asyncio` backend works.
+- `tests/conftest.py` patches DB startup functions so `TestClient` starts without MongoDB.
 
 ## Next Recommended Phase
-- Phase 2A: Agent caller module
-  - apply auth config to outbound requests
-  - request/response schema mapping
-  - latency and error capture
-- Phase 2B: Pre-flight route
-  - `POST /v1/projects/{id}/preflight`
-  - return green/amber/red status + latency + error details
+- Phase 3A: Persona template system
+  - Seven persona dataclasses (low_literacy, non_native, adversarial, distressed, domain_expert, ambiguous, multi_turn_drift)
+  - `generate(persona_type, domain_context, kb_findings) → system_prompt`
+  - Domain context injection + KB findings appended as probing hints
+  - LLM interface via LiteLLM (agreed at Phase 2A completion)
+
+## Testing Notes
+- Run tests: `venv/Scripts/python -m pytest -q`
+- Async tests use `pytest.mark.anyio` + `anyio_backend = "asyncio"` fixture in `tests/conftest.py` (trio not installed).
 
 ## Notes for Future Sessions
 - This implementation intentionally uses MongoDB instead of Postgres.

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
 
+AMBER_LATENCY_MS: float = 2000.0
+
 AuthType = Literal["bearer", "apikey", "basic", "none"]
 
 
@@ -83,3 +85,9 @@ class ProjectResponse(BaseModel):
 
 class ProjectListResponse(BaseModel):
     items: list[ProjectResponse]
+
+
+class PreflightResponse(BaseModel):
+    status: Literal["green", "amber", "red"]
+    latency_ms: float
+    error: str | None = None
