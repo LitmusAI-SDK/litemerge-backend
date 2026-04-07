@@ -57,6 +57,29 @@ curl -X POST http://localhost:8000/v1/runs \
 	}'
 ```
 
+## File Structure
+
+```
+litemerge-backend/
+├── api/                  # FastAPI route handlers and Pydantic schemas
+├── caller/               # AgentCaller — HTTP client for customer agent endpoints
+├── core/                 # App config, settings, middleware
+├── db/
+│   └── versions/         # MongoDB migration scripts (v0001_, v0002_, ...)
+├── llm/                  # LiteLLM interface for persona generation
+├── personas/
+│   ├── overview.md           # Index of all tester personas
+│   ├── companies_overview.md # Index of all company profiles
+│   ├── tester_profiles/      # Individual persona files (p1.md – p8.md)
+│   └── companies/            # Company profile files (c1.md – c5.md)
+├── simulation/           # Simulation orchestration logic
+├── tests/                # Pytest test suite
+├── worker/               # Celery worker entrypoint
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
+```
+
 ## Notes
 
 - The `db/versions` folder is used as a MongoDB migration script directory.
