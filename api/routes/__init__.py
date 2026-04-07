@@ -1,4 +1,4 @@
-from api.routes.health import health as health
-from api.routes.projects import projects as projects
-from api.routes.reports import reports as reports
-from api.routes.runs import runs as runs
+from api.routes.health import router as health
+from api.routes.projects import router as projects
+from api.routes.reports import router as reports
+from api.routes.runs import router as runs
