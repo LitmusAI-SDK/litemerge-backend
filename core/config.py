@@ -21,6 +21,34 @@ class Settings(BaseSettings):
         default_factory=lambda: ["/v1/health", "/docs", "/openapi.json", "/redoc"]
     )
 
+    # ── LLM routing ──────────────────────────────────────────────────────────
+    # llm_provider controls which provider branch is used for caching logic.
+    # llm_model is the full litellm model string passed to acompletion().
+    # Examples:
+    #   gemini    → "gemini/gemini-1.5-flash"
+    #   anthropic → "anthropic/claude-haiku-4-5-20251001"
+    #   openai    → "openai/gpt-4o-mini"
+    #   lmstudio  → uses lmstudio_base_url + lmstudio_model instead of llm_model
+    llm_provider: str = "anthropic"
+    llm_model: str = "anthropic/claude-haiku-4-5-20251001"
+
+    # ── Provider API keys ─────────────────────────────────────────────────────
+    gemini_api_key: str = ""
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+
+    # ── LM Studio local endpoint ──────────────────────────────────────────────
+    lmstudio_base_url: str = "http://localhost:1234/v1"
+    lmstudio_model: str = "gemma4"
+
+    # ── Retry strategy ────────────────────────────────────────────────────────
+    retry_max_attempts: int = 3
+    retry_min_wait_s: float = 4.0
+    retry_max_wait_s: float = 10.0
+
+    # ── Persona profiles directory ────────────────────────────────────────────
+    persona_profiles_dir: str = "personas/profiles"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -43,3 +71,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Apply litellm global config after settings are loaded.
+# Wrapped in try/except so tests that don't install litellm still pass.
+try:
+    import litellm
+
+    litellm.openai_key = settings.openai_api_key
+    litellm.anthropic_key = settings.anthropic_api_key
+    if settings.gemini_api_key:
+        litellm.api_key = settings.gemini_api_key
+except ImportError:
+    pass
