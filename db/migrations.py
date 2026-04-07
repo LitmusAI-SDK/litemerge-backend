@@ -56,7 +56,9 @@ def discover_migrations(migrations_dir: Path = MIGRATIONS_DIR) -> list[Migration
     seen_versions: set[int] = set()
     for script in scripts:
         if script.version in seen_versions:
-            raise RuntimeError(f"Duplicate migration version detected: {script.version}")
+            raise RuntimeError(
+                f"Duplicate migration version detected: {script.version}"
+            )
         seen_versions.add(script.version)
 
     return scripts

@@ -57,7 +57,9 @@ class AgentCaller:
         timeout_s: Per-request timeout in seconds (default 30).
     """
 
-    def __init__(self, project_config: dict, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
+    def __init__(
+        self, project_config: dict, timeout_s: float = DEFAULT_TIMEOUT_S
+    ) -> None:
         self._endpoint: str = project_config["agent_endpoint"]
         self._auth_config: dict = project_config.get("auth_config") or {}
         self._schema_hints: dict[str, str] = project_config.get("schema_hints") or {}

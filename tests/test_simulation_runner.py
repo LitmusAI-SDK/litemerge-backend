@@ -11,6 +11,7 @@ from simulation.runner import SUITE_PERSONAS, SimulationRun
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_db(run_doc=None, project_doc=None):
     """Build a mock Motor database with pre-configured find_one responses."""
     db = MagicMock()
@@ -49,6 +50,7 @@ def _make_runner(
 # Suite → persona mapping
 # ---------------------------------------------------------------------------
 
+
 def test_standard_suite_personas():
     assert set(SUITE_PERSONAS["standard"]) == {"p1", "p2", "p3", "p4", "p5", "p6", "p7"}
 
@@ -58,7 +60,16 @@ def test_adversarial_suite_personas():
 
 
 def test_full_suite_personas():
-    assert set(SUITE_PERSONAS["full"]) == {"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"}
+    assert set(SUITE_PERSONAS["full"]) == {
+        "p1",
+        "p2",
+        "p3",
+        "p4",
+        "p5",
+        "p6",
+        "p7",
+        "p8",
+    }
 
 
 def test_full_is_superset_of_standard():
@@ -69,8 +80,10 @@ def test_full_is_superset_of_standard():
 # SimulationRun.execute — happy path
 # ---------------------------------------------------------------------------
 
+
 def _session_factory(turn_count=3, raises=None):
     """Return a side_effect callable that yields fresh session mocks per call."""
+
     def factory(*_, **__):
         m = MagicMock()
         if raises:
@@ -78,6 +91,7 @@ def _session_factory(turn_count=3, raises=None):
         else:
             m.run = AsyncMock(return_value=[MagicMock()] * turn_count)
         return m
+
     return factory
 
 
@@ -86,7 +100,9 @@ async def test_execute_standard_runs_7_sessions():
     """execute() with standard suite should spin up exactly 7 PersonaSessions."""
     runner, db = _make_runner()
 
-    with patch("simulation.runner.PersonaSession", side_effect=_session_factory(3)) as mock_cls:
+    with patch(
+        "simulation.runner.PersonaSession", side_effect=_session_factory(3)
+    ) as mock_cls:
         summary = await runner.execute(test_suite="standard")
 
     assert mock_cls.call_count == 7
@@ -99,7 +115,9 @@ async def test_execute_standard_runs_7_sessions():
 async def test_execute_adversarial_suite():
     runner, db = _make_runner()
 
-    with patch("simulation.runner.PersonaSession", side_effect=_session_factory(5)) as mock_cls:
+    with patch(
+        "simulation.runner.PersonaSession", side_effect=_session_factory(5)
+    ) as mock_cls:
         summary = await runner.execute(test_suite="adversarial")
 
     assert mock_cls.call_count == 4
@@ -110,7 +128,9 @@ async def test_execute_adversarial_suite():
 async def test_execute_full_suite():
     runner, db = _make_runner()
 
-    with patch("simulation.runner.PersonaSession", side_effect=_session_factory(2)) as mock_cls:
+    with patch(
+        "simulation.runner.PersonaSession", side_effect=_session_factory(2)
+    ) as mock_cls:
         _summary = await runner.execute(test_suite="full")
 
     assert mock_cls.call_count == 8
@@ -119,6 +139,7 @@ async def test_execute_full_suite():
 # ---------------------------------------------------------------------------
 # Run document state transitions
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_execute_sets_running_then_complete():
@@ -158,6 +179,7 @@ async def test_execute_all_failed_marks_run_failed():
 # ---------------------------------------------------------------------------
 # Redis event publishing
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_events_published_on_session_complete():
@@ -224,6 +246,7 @@ async def test_failed_session_publishes_session_failed_event():
 # Unknown suite falls back to standard
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_unknown_suite_falls_back_to_standard():
     runner, _ = _make_runner()
@@ -231,7 +254,9 @@ async def test_unknown_suite_falls_back_to_standard():
     session_mock = MagicMock()
     session_mock.run = AsyncMock(return_value=[])
 
-    with patch("simulation.runner.PersonaSession", return_value=session_mock) as mock_cls:
+    with patch(
+        "simulation.runner.PersonaSession", return_value=session_mock
+    ) as mock_cls:
         await runner.execute(test_suite="unknown_suite")
 
     assert mock_cls.call_count == 7  # standard = 7 personas

@@ -64,6 +64,7 @@ def engine(profile_dir: Path) -> PersonaEngine:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_build_prompt_returns_string_and_profile(engine: PersonaEngine) -> None:
     result = engine.build_prompt("p1", _DOMAIN_CONTEXT, [])
     assert isinstance(result, tuple)
@@ -95,8 +96,11 @@ def test_prompt_contains_identity_lock_heading(engine: PersonaEngine) -> None:
 
 def test_kb_findings_appear_when_provided(engine: PersonaEngine) -> None:
     findings = [
-        {"persona_type": "low_digital_literacy", "severity": "high",
-         "description": "Agent fails on multi-step instructions"},
+        {
+            "persona_type": "low_digital_literacy",
+            "severity": "high",
+            "description": "Agent fails on multi-step instructions",
+        },
     ]
     system_prompt, _ = engine.build_prompt("p1", _DOMAIN_CONTEXT, findings)
     assert "Agent fails on multi-step instructions" in system_prompt

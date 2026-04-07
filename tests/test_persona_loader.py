@@ -61,6 +61,7 @@ def loader(profile_dir: Path) -> PersonaLoader:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_load_valid_persona_returns_profile(loader: PersonaLoader) -> None:
     profile = loader.load("p1")
     assert isinstance(profile, PersonaProfile)

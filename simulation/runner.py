@@ -102,7 +102,9 @@ class SimulationRun:
         persona_ids = SUITE_PERSONAS.get(test_suite, SUITE_PERSONAS["standard"])
         logger.info(
             "SimulationRun %s starting — suite=%s personas=%s",
-            self.run_id, test_suite, persona_ids,
+            self.run_id,
+            test_suite,
+            persona_ids,
         )
 
         await self._update_run_status("running")
@@ -138,17 +140,22 @@ class SimulationRun:
         }
 
         await self._update_run_complete(overall_status, summary)
-        await self._publish({
-            "event": "run_complete",
-            "run_id": self.run_id,
-            "status": overall_status,
-            "total_sessions": total,
-            "failed_sessions": len(failed),
-        })
+        await self._publish(
+            {
+                "event": "run_complete",
+                "run_id": self.run_id,
+                "status": overall_status,
+                "total_sessions": total,
+                "failed_sessions": len(failed),
+            }
+        )
 
         logger.info(
             "SimulationRun %s finished — status=%s sessions=%d failed=%d",
-            self.run_id, overall_status, total, len(failed),
+            self.run_id,
+            overall_status,
+            total,
+            len(failed),
         )
         return summary
 
@@ -161,31 +168,37 @@ class SimulationRun:
     ) -> tuple[str, int, Exception | None]:
         """Run one PersonaSession, publish events, return (persona_id, turns, error)."""
         pid = persona_id
-        await self._publish({
-            "event": "session_started",
-            "run_id": self.run_id,
-            "persona_id": pid,
-        })
+        await self._publish(
+            {
+                "event": "session_started",
+                "run_id": self.run_id,
+                "persona_id": pid,
+            }
+        )
 
         try:
             turn_logs = await session.run()
             turns = len(turn_logs)
-            await self._publish({
-                "event": "session_completed",
-                "run_id": self.run_id,
-                "persona_id": pid,
-                "turns": turns,
-            })
+            await self._publish(
+                {
+                    "event": "session_completed",
+                    "run_id": self.run_id,
+                    "persona_id": pid,
+                    "turns": turns,
+                }
+            )
             return pid, turns, None
 
         except Exception as exc:
             logger.exception("Session %s/%s raised an exception", self.run_id, pid)
-            await self._publish({
-                "event": "session_failed",
-                "run_id": self.run_id,
-                "persona_id": pid,
-                "error": str(exc),
-            })
+            await self._publish(
+                {
+                    "event": "session_failed",
+                    "run_id": self.run_id,
+                    "persona_id": pid,
+                    "error": str(exc),
+                }
+            )
             return pid, 0, exc
 
     # ------------------------------------------------------------------
@@ -221,4 +234,8 @@ class SimulationRun:
         try:
             await self.redis.publish(_channel(self.run_id), json.dumps(payload))
         except Exception:
-            logger.warning("Failed to publish event %s for run %s", payload.get("event"), self.run_id)
+            logger.warning(
+                "Failed to publish event %s for run %s",
+                payload.get("event"),
+                self.run_id,
+            )

@@ -46,14 +46,14 @@ _REQUIRED_SECTIONS = [
 class PersonaProfile:
     persona_id: str
     name: str
-    identity: dict            # raw key-value pairs from ## Identity section
-    behavioral_profile: str   # full text of ## Behavioural Profile section
+    identity: dict  # raw key-value pairs from ## Identity section
+    behavioral_profile: str  # full text of ## Behavioural Profile section
     tone: str
-    persona_type: str         # slug e.g. "low_digital_literacy", "adversarial"
+    persona_type: str  # slug e.g. "low_digital_literacy", "adversarial"
     example_openers: list[str]
     failure_patterns: list[str]
     role_anchor: str
-    raw_markdown: str         # full original file content (injected into master prompt)
+    raw_markdown: str  # full original file content (injected into master prompt)
 
 
 class PersonaLoader:
@@ -90,9 +90,7 @@ class PersonaLoader:
         # Extract name from top-level heading
         name_match = re.search(r"^#\s+Persona:\s+(.+)$", raw, re.MULTILINE)
         if not name_match:
-            raise ValueError(
-                f"Missing '# Persona: Name' header in {persona_id}.md"
-            )
+            raise ValueError(f"Missing '# Persona: Name' header in {persona_id}.md")
         name = name_match.group(1).strip()
 
         # Split into sections by ## headings
@@ -115,9 +113,7 @@ class PersonaLoader:
         # Validate required sections
         missing = [s for s in _REQUIRED_SECTIONS if s not in sections]
         if missing:
-            raise ValueError(
-                f"Missing required sections in {persona_id}.md: {missing}"
-            )
+            raise ValueError(f"Missing required sections in {persona_id}.md: {missing}")
 
         return PersonaProfile(
             persona_id=persona_id,

@@ -95,6 +95,7 @@ async def _execute(run_id: str) -> dict:
 
 async def _mark_failed(db, run_id: str) -> None:
     from datetime import datetime, timezone
+
     try:
         await db["runs"].update_one(
             {"run_id": run_id},

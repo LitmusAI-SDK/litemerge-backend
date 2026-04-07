@@ -13,8 +13,8 @@ from llm.models import LLMResponse
 
 async def agenerate(
     system_prompt: str,
-    history: list[dict],      # [{"role": "user"|"assistant", "content": str}]
-    session_meta: dict,       # {"turn_index": int, "session_id": str, "gemini_cache_name": str|None}
+    history: list[dict],  # [{"role": "user"|"assistant", "content": str}]
+    session_meta: dict,  # {"turn_index": int, "session_id": str, "gemini_cache_name": str|None}
 ) -> LLMResponse:
     """Build the message list, apply provider-specific cache annotations,
     and call litellm.acompletion(). Returns a normalised LLMResponse.
@@ -52,6 +52,6 @@ async def agenerate(
         prompt_tokens=getattr(usage, "prompt_tokens", 0),
         completion_tokens=getattr(usage, "completion_tokens", 0),
         total_tokens=getattr(usage, "total_tokens", 0),
-        cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0),    # Anthropic
+        cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0),  # Anthropic
         cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0),
     )

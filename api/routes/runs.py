@@ -59,7 +59,9 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
         "project_id": payload.project_id,
         "test_suite": payload.test_suite,
         "fail_threshold": payload.fail_threshold,
-        "notify_webhook": str(payload.notify_webhook) if payload.notify_webhook else None,
+        "notify_webhook": str(payload.notify_webhook)
+        if payload.notify_webhook
+        else None,
         "status": "queued",
         "estimated_duration_s": estimated_duration_s,
         "score": None,
@@ -73,6 +75,7 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
     # Dispatch to Celery worker — non-blocking, worker picks up from Redis queue
     try:
         from worker.tasks import process_run
+
         process_run.delay(run_id)
         logger.info("Dispatched run %s to Celery", run_id)
     except Exception:
@@ -83,9 +86,7 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
     return RunCreateResponse(
         run_id=run_id,
         status="queued",
-        status_url=(
-            f"{settings.public_api_base_url.rstrip('/')}/v1/runs/{run_id}"
-        ),
+        status_url=(f"{settings.public_api_base_url.rstrip('/')}/v1/runs/{run_id}"),
         estimated_duration_s=estimated_duration_s,
     )
 
@@ -94,7 +95,9 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
 async def get_run_status(run_id: str, request: Request) -> RunStatusResponse:
     run_doc = await request.app.state.db["runs"].find_one({"run_id": run_id})
     if not run_doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
+        )
 
     score = run_doc.get("score")
     fail_threshold = run_doc.get("fail_threshold")
@@ -134,16 +137,22 @@ async def stream_run_events(run_id: str, request: Request) -> StreamingResponse:
         {"run_id": run_id}, {"status": 1}
     )
     if not run_doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
+        )
 
     # If already terminal, return the current state immediately and close
     if run_doc["status"] in ("complete", "failed"):
+
         async def _immediate():
-            yield _sse_event({
-                "event": "run_complete",
-                "run_id": run_id,
-                "status": run_doc["status"],
-            })
+            yield _sse_event(
+                {
+                    "event": "run_complete",
+                    "run_id": run_id,
+                    "status": run_doc["status"],
+                }
+            )
+
         return StreamingResponse(_immediate(), media_type="text/event-stream")
 
     redis = request.app.state.redis
@@ -195,6 +204,7 @@ async def stream_run_events(run_id: str, request: Request) -> StreamingResponse:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sse_event(payload: dict) -> str:
     """Format a dict as an SSE data frame."""
     return f"data: {json.dumps(payload)}\n\n"
@@ -204,7 +214,13 @@ async def _fetch_session_statuses(db, run_id: str) -> list[SessionStatus]:
     """Return per-session progress from chat_logs for the given run."""
     cursor = db["chat_logs"].find(
         {"run_id": run_id},
-        {"persona_id": 1, "persona_name": 1, "persona_type": 1, "status": 1, "turns": 1},
+        {
+            "persona_id": 1,
+            "persona_name": 1,
+            "persona_type": 1,
+            "status": 1,
+            "turns": 1,
+        },
     )
     statuses: list[SessionStatus] = []
     async for doc in cursor:
@@ -212,11 +228,13 @@ async def _fetch_session_statuses(db, run_id: str) -> list[SessionStatus]:
         # Normalise any legacy values to our schema literals
         if raw_status not in ("in_progress", "completed", "failed"):
             raw_status = "in_progress"
-        statuses.append(SessionStatus(
-            persona_id=doc.get("persona_id", ""),
-            persona_name=doc.get("persona_name"),
-            persona_type=doc.get("persona_type"),
-            status=raw_status,
-            turns_completed=len(doc.get("turns", [])),
-        ))
+        statuses.append(
+            SessionStatus(
+                persona_id=doc.get("persona_id", ""),
+                persona_name=doc.get("persona_name"),
+                persona_type=doc.get("persona_type"),
+                status=raw_status,
+                turns_completed=len(doc.get("turns", [])),
+            )
+        )
     return statuses

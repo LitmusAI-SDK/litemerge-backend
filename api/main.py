@@ -8,7 +8,12 @@ from api.middleware import ApiKeyAuthMiddleware
 from api.routes import health, projects, reports, runs
 from core.config import settings
 from db.migrations import run_migrations
-from db.mongodb import bootstrap_api_key, create_mongo_client, get_database, init_indexes
+from db.mongodb import (
+    bootstrap_api_key,
+    create_mongo_client,
+    get_database,
+    init_indexes,
+)
 
 logger = logging.getLogger(__name__)
 

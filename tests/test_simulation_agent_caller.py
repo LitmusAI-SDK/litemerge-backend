@@ -9,13 +9,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from caller.agent_caller import AgentResponse, AgentRetriableError, SimulationAgentCaller
+from caller.agent_caller import (
+    AgentResponse,
+    AgentRetriableError,
+    SimulationAgentCaller,
+)
 from core.crypto import encrypt_secret
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_project(
     endpoint: str = "https://agent.example.com/chat",
@@ -62,6 +67,7 @@ def _mock_http_response(status_code: int = 200, body: dict | str | None = None):
 # ---------------------------------------------------------------------------
 # Delegation tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.anyio
 async def test_bearer_auth_injects_authorization_header() -> None:
@@ -122,6 +128,7 @@ async def test_non_200_returns_none_reply() -> None:
 # ---------------------------------------------------------------------------
 # Mock mode tests
 # ---------------------------------------------------------------------------
+
 
 def test_mock_mode_produces_503_and_429() -> None:
     """Over 200 mock calls, at least one 429 and one 503 must appear."""
