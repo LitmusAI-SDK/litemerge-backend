@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "litemerge-backend"
+version = "0.1.0"
+description = "LitmusAI backend scaffold"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "celery[redis]>=5.4.0",
+  "fastapi>=0.115.0",
+  "httpx>=0.28.0",
+  "litellm>=1.83.4",
+  "motor>=3.6.0",
+  "pydantic-settings>=2.5.0",
+  "pymongo>=4.9.0",
+  "tenacity>=8.2.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "anyio>=4.0.0",
+  "pytest>=8.3.0",
+  "ruff>=0.6.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "caller*", "core*", "db*", "llm*", "personas*", "simulation*", "worker*"]
