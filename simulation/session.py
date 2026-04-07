@@ -28,7 +28,7 @@ from llm.caller import agenerate
 from llm.models import LLMResponse
 from personas.engine import PersonaEngine
 from personas.loader import PersonaProfile
-from simulation.agent_caller import AgentResponse, AgentRetriableError, SimulationAgentCaller
+from caller.agent_caller import AgentResponse, AgentRetriableError, SimulationAgentCaller
 from simulation.scrubbing import Scrubber
 
 # ---------------------------------------------------------------------------
