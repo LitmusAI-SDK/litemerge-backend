@@ -55,7 +55,7 @@ app.add_middleware(
     api_key_header=settings.api_key_header,
 )
 
-app.include_router(health.router, prefix="/v1")
-app.include_router(runs.router, prefix="/v1")
-app.include_router(projects.router, prefix="/v1")
-app.include_router(reports.router, prefix="/v1")
+app.include_router(health, prefix="/v1")
+app.include_router(runs, prefix="/v1")
+app.include_router(projects, prefix="/v1")
+app.include_router(reports, prefix="/v1")
