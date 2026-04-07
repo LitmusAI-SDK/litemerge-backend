@@ -1,11 +1,9 @@
 """
-run_simulation.py — LitmusAI behavioural fuzzing runner.
+run_simulation.py — LitmusAI agent prompt generator.
 
 Loads every persona from tester_profiles/ and every company from companies/,
-builds a system prompt for each pair using master_prompt.build_agent_prompt(),
-then sends the persona's opening message through local Gemma4 (Ollama).
-
-Results are printed to stdout and saved to simulation_results.xlsx.
+sends the persona + company data to Gemma4 via the master prompt, and stores
+the generated system prompts in simulation_results.xlsx.
 
 Usage (from the personas/ directory):
     python run_simulation.py
@@ -30,7 +28,7 @@ import requests
 PERSONAS_DIR = Path(__file__).parent
 sys.path.insert(0, str(PERSONAS_DIR))
 
-from master_prompt import build_agent_prompt  # noqa: E402
+from master_prompt import build_generation_request  # noqa: E402
 
 TESTER_PROFILES_DIR = PERSONAS_DIR / "tester_profiles"
 COMPANIES_DIR = PERSONAS_DIR / "companies"
@@ -44,23 +42,17 @@ RESULTS_FILE = PERSONAS_DIR / "simulation_results.xlsx"
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "gemma4:latest"
 
-OPENING_NUDGE = (
-    "The chat window just opened. Send your very first message to the bot. "
-    "Stay completely in character — do not explain yourself, do not use headers or bullets, "
-    "just write exactly what you would type into the chat box."
-)
 
-
-def query_gemma(system_prompt: str, user_prompt: str) -> str:
+def query_gemma(system_msg: str, user_msg: str) -> str:
     payload = {
         "model": MODEL,
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
         ],
         "stream": False,
     }
-    response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+    response = requests.post(OLLAMA_URL, json=payload, timeout=180)
     response.raise_for_status()
     return response.json()["message"]["content"]
 
@@ -116,7 +108,6 @@ def _extract_inline(md: str, bold_label: str) -> str:
 def parse_persona(path: Path) -> dict:
     md = path.read_text(encoding="utf-8")
 
-    # Name from # Persona: NAME
     name_match = re.match(r"#\s+Persona:\s+(.+)", md)
     name = name_match.group(1).strip() if name_match else path.stem
 
@@ -125,12 +116,9 @@ def parse_persona(path: Path) -> dict:
     summary = _extract_section(md, "summary")
     tone_raw = _extract_section(md, "tone")
 
-    # brief_identity: first sentence of Summary, or first line of Identity
     brief_identity = _first_sentence(summary) if summary else _first_sentence(identity_block)
-    # Strip markdown bold markers for the brief sentence
     brief_identity = re.sub(r"\*\*", "", brief_identity)
 
-    # Combine identity + behavioural into identity_block
     full_identity = "\n\n".join(filter(None, [identity_block, behavioural]))
 
     return {
@@ -150,9 +138,6 @@ def _parse_industry_map() -> dict[str, str]:
     if not COMPANIES_OVERVIEW.exists():
         return industry_map
     md = COMPANIES_OVERVIEW.read_text(encoding="utf-8")
-    # Each block looks like:
-    #   ## C1 — QuickBite
-    #   **Industry:** Food Delivery
     for block in re.split(r"^---", md, flags=re.MULTILINE):
         name_match = re.search(r"##\s+C\d+\s+[—–-]+\s+(.+)", block)
         industry_match = re.search(r"\*\*Industry:\*\*\s*(.+)", block)
@@ -161,7 +146,7 @@ def _parse_industry_map() -> dict[str, str]:
     return industry_map
 
 
-_INDUSTRY_MAP: dict[str, str] = {}  # populated lazily on first use
+_INDUSTRY_MAP: dict[str, str] = {}
 
 
 def parse_company(path: Path) -> dict:
@@ -171,18 +156,15 @@ def parse_company(path: Path) -> dict:
 
     md = path.read_text(encoding="utf-8")
 
-    # Company name from # Company Profile: NAME
     name_match = re.match(r"#\s+Company Profile:\s+(.+)", md)
     company_name = name_match.group(1).strip() if name_match else path.stem
 
-    # Bot name from ## 2. The Agent section, then * **Name:** line
     agent_section = _extract_section(md, "2.", "the agent")
     bot_name = _extract_inline(agent_section, "Name")
     if not bot_name:
         bot_name = f"{company_name} Assistant"
 
     industry = _INDUSTRY_MAP.get(company_name, "")
-
     capabilities = _extract_section(md, "3.", "core capabilities")
     test_scenarios = _extract_section(md, "4.", "test case parameters")
 
@@ -199,18 +181,18 @@ def parse_company(path: Path) -> dict:
 # Excel export
 # ---------------------------------------------------------------------------
 
-HEADERS = ["#", "Persona", "Company", "Elapsed (s)", "Opening Message", "Error"]
+HEADERS = ["#", "Persona", "Company", "Elapsed (s)", "Generated System Prompt", "Error"]
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 ERROR_FILL = PatternFill("solid", fgColor="FFE0E0")
 
 
-def _save_excel(results: list[dict]) -> None:
+def _init_excel() -> None:
+    """Create the results file with headers and column widths."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Simulation Results"
+    ws.title = "Generated Prompts"
 
-    # Header row
     for col, header in enumerate(HEADERS, start=1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = HEADER_FONT
@@ -218,32 +200,35 @@ def _save_excel(results: list[dict]) -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
     ws.row_dimensions[1].height = 20
+    ws.column_dimensions["A"].width = 5    # #
+    ws.column_dimensions["B"].width = 16   # Persona
+    ws.column_dimensions["C"].width = 18   # Company
+    ws.column_dimensions["D"].width = 12   # Elapsed
+    ws.column_dimensions["E"].width = 120  # Generated System Prompt
+    ws.column_dimensions["F"].width = 40   # Error
 
-    # Data rows
-    for i, r in enumerate(results, start=1):
-        is_error = "error" in r
-        row = [
-            i,
-            r.get("persona", ""),
-            r.get("company", ""),
-            r.get("elapsed_s", ""),
-            r.get("opening_message", "") if not is_error else "",
-            r.get("error", ""),
-        ]
-        for col, value in enumerate(row, start=1):
-            cell = ws.cell(row=i + 1, column=col, value=value)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-            if is_error:
-                cell.fill = ERROR_FILL
+    wb.save(RESULTS_FILE)
 
-    # Column widths
-    ws.column_dimensions["A"].width = 5   # #
-    ws.column_dimensions["B"].width = 16  # Persona
-    ws.column_dimensions["C"].width = 18  # Company
-    ws.column_dimensions["D"].width = 12  # Elapsed
-    ws.column_dimensions["E"].width = 80  # Opening Message
-    ws.column_dimensions["F"].width = 40  # Error
 
+def _append_row(result: dict, row_num: int) -> None:
+    """Append a single result row to the existing Excel file."""
+    wb = openpyxl.load_workbook(RESULTS_FILE)
+    ws = wb.active
+    is_error = bool(result.get("error"))
+    row = [
+        row_num,
+        result.get("persona", ""),
+        result.get("company", ""),
+        result.get("elapsed_s", ""),
+        result.get("generated_prompt", "") if not is_error else "",
+        result.get("error", ""),
+    ]
+    excel_row = row_num + 1  # +1 for header row
+    for col, value in enumerate(row, start=1):
+        cell = ws.cell(row=excel_row, column=col, value=value)
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if is_error:
+            cell.fill = ERROR_FILL
     wb.save(RESULTS_FILE)
 
 
@@ -267,9 +252,9 @@ def run_all() -> None:
     company_dicts = [parse_company(c) for c in companies]
 
     total = len(persona_dicts) * len(company_dicts)
-    print(f"Running {len(persona_dicts)} personas × {len(company_dicts)} companies = {total} combinations\n")
+    print(f"Generating prompts: {len(persona_dicts)} personas × {len(company_dicts)} companies = {total} combinations\n")
 
-    results = []
+    _init_excel()
     count = 0
 
     for persona in persona_dicts:
@@ -279,21 +264,18 @@ def run_all() -> None:
             print(f"{label} ... ", end="", flush=True)
 
             try:
-                system_prompt = build_agent_prompt(persona, company)
+                system_msg, user_msg = build_generation_request(persona, company)
                 t0 = time.time()
-                opening = query_gemma(system_prompt, OPENING_NUDGE)
+                generated_prompt = query_gemma(system_msg, user_msg)
                 elapsed = round(time.time() - t0, 1)
 
                 print(f"done ({elapsed}s)")
-                print(f"  → {opening[:120]}{'...' if len(opening) > 120 else ''}\n")
-
-                results.append({
+                result = {
                     "persona": persona["name"],
                     "company": company["company_name"],
                     "elapsed_s": elapsed,
-                    "opening_message": opening,
-                    "system_prompt": system_prompt,
-                })
+                    "generated_prompt": generated_prompt,
+                }
 
             except requests.exceptions.ConnectionError:
                 print("FAILED — Ollama not reachable at http://localhost:11434")
@@ -301,16 +283,16 @@ def run_all() -> None:
                 sys.exit(1)
             except Exception as exc:
                 print(f"ERROR — {exc}")
-                results.append({
+                result = {
                     "persona": persona["name"],
                     "company": company["company_name"],
                     "error": str(exc),
-                })
+                }
 
-    # Save results to Excel
-    _save_excel(results)
+            _append_row(result, count)
+
     print(f"\n{'='*60}")
-    print(f"Completed {count} runs. Results saved to {RESULTS_FILE.name}")
+    print(f"Done. {count} prompts generated and saved to {RESULTS_FILE.name}")
 
 
 if __name__ == "__main__":
