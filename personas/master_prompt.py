@@ -54,8 +54,10 @@ IDENTITY LOCK
 
 def render(
     profile: "PersonaProfile",
-    domain_context: dict,    # keys: product_name, user_type, domain_vocabulary, application_domain
-    kb_findings: list[dict], # pre-filtered by kb_filter.filter_findings(); empty until Phase 5
+    domain_context: dict,  # keys: product_name, user_type, domain_vocabulary, application_domain
+    kb_findings: list[
+        dict
+    ],  # pre-filtered by kb_filter.filter_findings(); empty until Phase 5
 ) -> str:
     """Render MASTER_PROMPT_TEMPLATE with the given persona and context.
 
@@ -63,7 +65,9 @@ def render(
     Missing domain_context keys are silently replaced with empty string.
     """
     kb_block = (
-        "\n".join(f"{i + 1}. {f.get('description', '')}" for i, f in enumerate(kb_findings))
+        "\n".join(
+            f"{i + 1}. {f.get('description', '')}" for i, f in enumerate(kb_findings)
+        )
         if kb_findings
         else "No prior findings. Explore broadly."
     )

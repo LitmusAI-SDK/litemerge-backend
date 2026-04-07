@@ -28,12 +28,17 @@ from llm.caller import agenerate
 from llm.models import LLMResponse
 from personas.engine import PersonaEngine
 from personas.loader import PersonaProfile
-from simulation.agent_caller import AgentResponse, AgentRetriableError, SimulationAgentCaller
+from caller.agent_caller import (
+    AgentResponse,
+    AgentRetriableError,
+    SimulationAgentCaller,
+)
 from simulation.scrubbing import Scrubber
 
 # ---------------------------------------------------------------------------
 # Standalone retried helpers (module-level — decorated once at import time)
 # ---------------------------------------------------------------------------
+
 
 @retry(
     wait=wait_random(min=settings.retry_min_wait_s, max=settings.retry_max_wait_s),
@@ -72,6 +77,7 @@ async def _retried_agent_call(
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class TurnLog:
     turn_index: int
@@ -83,11 +89,11 @@ class TurnLog:
 
 @dataclass
 class PersonaSession:
-    persona_id: str           # e.g. "p1" → loads personas/profiles/p1.md
-    project_config: dict      # full project document from MongoDB
+    persona_id: str  # e.g. "p1" → loads personas/profiles/p1.md
+    project_config: dict  # full project document from MongoDB
     run_id: str
     db: AsyncIOMotorDatabase
-    turns: int = 8            # default 8; configurable per run
+    turns: int = 8  # default 8; configurable per run
 
     # Allow injecting a profiles_dir for tests
     _profiles_dir: str | None = field(default=None, repr=False)
@@ -136,6 +142,7 @@ class PersonaSession:
 
         if settings.llm_provider == "gemini":
             from llm.gemini_cache_manager import GeminiCacheManager
+
             gemini_manager = GeminiCacheManager(system_prompt, self.session_id)
             gemini_cache_name = await gemini_manager.get_or_create()
 
@@ -155,7 +162,9 @@ class PersonaSession:
 
                 # LLM persona turn
                 try:
-                    llm_response = await _retried_llm_call(system_prompt, history, session_meta)
+                    llm_response = await _retried_llm_call(
+                        system_prompt, history, session_meta
+                    )
                 except Exception:
                     await _mark_session(self.db, self.session_id, status="failed")
                     break
@@ -192,8 +201,13 @@ class PersonaSession:
 
                 # Persist turn immediately (safe for partial runs)
                 await _upsert_turn(
-                    self.db, self.session_id, self.run_id,
-                    self.project_config, profile, turn, llm_response,
+                    self.db,
+                    self.session_id,
+                    self.run_id,
+                    self.project_config,
+                    profile,
+                    turn,
+                    llm_response,
                 )
 
                 # Early exit on agent failure
@@ -231,7 +245,9 @@ class PersonaSession:
         history: list[dict] = []
         for t in existing_turns:
             history.append({"role": "user", "content": t.get("persona_turn", "")})
-            history.append({"role": "assistant", "content": t.get("agent_response") or ""})
+            history.append(
+                {"role": "assistant", "content": t.get("agent_response") or ""}
+            )
 
         return len(existing_turns), history
 
@@ -239,6 +255,7 @@ class PersonaSession:
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
+
 
 async def _upsert_turn(
     db: AsyncIOMotorDatabase,
@@ -302,6 +319,7 @@ def _extract_secrets(project_config: dict) -> list[str]:
         return []
     try:
         from core.crypto import decrypt_secret
+
         return [decrypt_secret(value_encrypted)]
     except Exception:
         return []

@@ -1,7 +1,5 @@
 """Unit tests for simulation.scrubbing.Scrubber."""
 
-import pytest
-
 from simulation.scrubbing import Scrubber
 
 

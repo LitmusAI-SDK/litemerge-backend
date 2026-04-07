@@ -17,6 +17,14 @@ class RunCreateResponse(BaseModel):
     estimated_duration_s: int
 
 
+class SessionStatus(BaseModel):
+    persona_id: str
+    persona_name: str | None = None
+    persona_type: str | None = None
+    status: Literal["in_progress", "completed", "failed"]
+    turns_completed: int
+
+
 class RunStatusResponse(BaseModel):
     run_id: str
     status: Literal["queued", "running", "evaluating", "complete", "failed"]
@@ -24,3 +32,4 @@ class RunStatusResponse(BaseModel):
     passed: bool | None = None
     report_url: str | None = None
     summary: dict | None = None
+    session_statuses: list[SessionStatus] = []

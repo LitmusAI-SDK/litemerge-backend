@@ -19,7 +19,6 @@ TTL_SECONDS = 3600  # 1 hour; set to expected max session duration
 
 
 class GeminiCacheManager:
-
     def __init__(self, system_prompt: str, session_id: str):
         self.system_prompt = system_prompt
         self.session_id = session_id
@@ -39,9 +38,7 @@ class GeminiCacheManager:
 
         payload = {
             "model": f"models/{bare_model}",
-            "systemInstruction": {
-                "parts": [{"text": self.system_prompt}]
-            },
+            "systemInstruction": {"parts": [{"text": self.system_prompt}]},
             "ttl": f"{TTL_SECONDS}s",
             "displayName": f"litmusai-{self.session_id}",
         }

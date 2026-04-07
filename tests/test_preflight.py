@@ -23,6 +23,7 @@ TEST_PROJECT_ID = "proj_test123"
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _project_doc(project_id: str = TEST_PROJECT_ID) -> dict:
     return {
         "_id": project_id,
@@ -37,7 +38,7 @@ def _api_key_record() -> dict:
         "_id": "key-hash-id",
         "key_hash": hash_api_key(BOOTSTRAP_KEY),
         "is_active": True,
-        "project_ids": [],   # empty = unrestricted
+        "project_ids": [],  # empty = unrestricted
         "scopes": ["*"],
     }
 
@@ -92,6 +93,7 @@ def _caller_result(
 # ---------------------------------------------------------------------------
 # Green / amber / red status tests
 # ---------------------------------------------------------------------------
+
 
 def test_preflight_green(client_and_db) -> None:
     client, _ = client_and_db
@@ -216,6 +218,7 @@ def test_preflight_red_bad_reply_field(client_and_db) -> None:
 # AgentCaller construction — verify project doc is passed through
 # ---------------------------------------------------------------------------
 
+
 def test_preflight_passes_project_doc_to_agent_caller(client_and_db) -> None:
     """AgentCaller must be instantiated with the full project doc from DB."""
     client, _ = client_and_db
@@ -254,8 +257,9 @@ def test_preflight_probe_uses_preflight_session_id(client_and_db) -> None:
 # Auth / access control
 # ---------------------------------------------------------------------------
 
+
 def test_preflight_404_when_project_not_found() -> None:
-    db = _mock_db(project_doc=None)   # DB returns None for find_one
+    db = _mock_db(project_doc=None)  # DB returns None for find_one
     with TestClient(app) as client:
         app.state.db = db
         app.state.db_ready = True

@@ -7,7 +7,9 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> HealthResponse:
-    mongodb_status = "ok" if getattr(request.app.state, "db_ready", False) else "degraded"
+    mongodb_status = (
+        "ok" if getattr(request.app.state, "db_ready", False) else "degraded"
+    )
 
     return HealthResponse(
         status="ok",

@@ -9,13 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from caller.agent_caller import AgentCaller, CallerResult
+from caller.agent_caller import AgentCaller
 from core.crypto import encrypt_secret
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_project(
     endpoint: str = "https://agent.example.com/chat",
@@ -68,6 +69,7 @@ def _mock_http_response(
 # Successful call tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_send_no_auth_success() -> None:
     project = _make_project(auth_type="none")
@@ -103,7 +105,9 @@ async def test_send_bearer_auth() -> None:
 
 @pytest.mark.anyio
 async def test_send_apikey_auth() -> None:
-    project = _make_project(auth_type="apikey", auth_value="key-xyz", header_name="X-Custom-Key")
+    project = _make_project(
+        auth_type="apikey", auth_value="key-xyz", header_name="X-Custom-Key"
+    )
     caller = AgentCaller(project)
 
     mock_cm, mock_client = _mock_http_response()
@@ -148,7 +152,10 @@ async def test_send_session_id_header() -> None:
 async def test_send_default_body_fields() -> None:
     project = _make_project()
     caller = AgentCaller(project)
-    history = [{"role": "user", "content": "hey"}, {"role": "assistant", "content": "yo"}]
+    history = [
+        {"role": "user", "content": "hey"},
+        {"role": "assistant", "content": "yo"},
+    ]
 
     mock_cm, mock_client = _mock_http_response()
     with patch("caller.agent_caller.httpx.AsyncClient", return_value=mock_cm):
@@ -190,6 +197,7 @@ async def test_send_schema_hints_remap_fields() -> None:
 # Error handling tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.anyio
 async def test_send_timeout() -> None:
     import httpx as _httpx
@@ -222,9 +230,7 @@ async def test_send_request_error() -> None:
 
     mock_cm = AsyncMock()
     mock_client = AsyncMock()
-    mock_client.post = AsyncMock(
-        side_effect=_httpx.ConnectError("Connection refused")
-    )
+    mock_client.post = AsyncMock(side_effect=_httpx.ConnectError("Connection refused"))
     mock_cm.__aenter__ = AsyncMock(return_value=mock_client)
     mock_cm.__aexit__ = AsyncMock(return_value=None)
 

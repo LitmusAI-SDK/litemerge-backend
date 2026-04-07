@@ -5,13 +5,12 @@ All tests are pure — no LLM calls, no network, no external deps.
 
 import copy
 
-import pytest
-
 from llm.cache import apply_cache
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _messages(system_content="You are a helpful assistant."):
     return [
@@ -23,6 +22,7 @@ def _messages(system_content="You are a helpful assistant."):
 # ---------------------------------------------------------------------------
 # Anthropic
 # ---------------------------------------------------------------------------
+
 
 def test_anthropic_wraps_system_content_in_block() -> None:
     messages = apply_cache(_messages(), provider="anthropic")
@@ -49,7 +49,10 @@ def test_anthropic_existing_list_content_gets_cache_control() -> None:
     msgs = [
         {
             "role": "system",
-            "content": [{"type": "text", "text": "block one"}, {"type": "text", "text": "block two"}],
+            "content": [
+                {"type": "text", "text": "block one"},
+                {"type": "text", "text": "block two"},
+            ],
         },
         {"role": "user", "content": "Hi"},
     ]
@@ -62,6 +65,7 @@ def test_anthropic_existing_list_content_gets_cache_control() -> None:
 # ---------------------------------------------------------------------------
 # Gemini
 # ---------------------------------------------------------------------------
+
 
 def test_gemini_hint_added_to_system_message() -> None:
     messages = apply_cache(_messages(), provider="gemini")
@@ -78,6 +82,7 @@ def test_gemini_does_not_mutate_input() -> None:
 # ---------------------------------------------------------------------------
 # OpenAI / LM Studio / unknown
 # ---------------------------------------------------------------------------
+
 
 def test_openai_messages_returned_unchanged() -> None:
     original = _messages()

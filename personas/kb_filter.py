@@ -16,7 +16,8 @@ def filter_findings(
     Returns at most max_findings items.
     """
     relevant = [
-        f for f in findings
+        f
+        for f in findings
         if f.get("persona_type") == persona_type or f.get("severity") == "critical"
     ]
     return relevant[:max_findings]

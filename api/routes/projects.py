@@ -60,7 +60,9 @@ def _ensure_project_access(project_id: str, api_key_record: dict) -> None:
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(payload: ProjectCreateRequest, request: Request) -> ProjectResponse:
+async def create_project(
+    payload: ProjectCreateRequest, request: Request
+) -> ProjectResponse:
     now = datetime.now(timezone.utc)
     project_id = payload.id or generate_project_id()
     project_doc = {
@@ -140,7 +142,9 @@ async def patch_project(
     )
 
     if not updated:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
 
     return _to_project_response(updated)
 
@@ -159,7 +163,9 @@ async def preflight_project(project_id: str, request: Request) -> PreflightRespo
 
     project_doc = await request.app.state.db["projects"].find_one({"_id": project_id})
     if not project_doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
 
     caller = AgentCaller(project_doc)
     result = await caller.send(
@@ -169,7 +175,9 @@ async def preflight_project(project_id: str, request: Request) -> PreflightRespo
     )
 
     if result.error:
-        return PreflightResponse(status="red", latency_ms=result.latency_ms, error=result.error)
+        return PreflightResponse(
+            status="red", latency_ms=result.latency_ms, error=result.error
+        )
 
     if result.latency_ms >= AMBER_LATENCY_MS:
         return PreflightResponse(status="amber", latency_ms=result.latency_ms)
