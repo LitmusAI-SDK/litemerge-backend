@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from caller.agent_caller import AgentCaller, CallerResult
+from caller.agent_caller import AgentCaller
 from core.crypto import encrypt_secret
 
 

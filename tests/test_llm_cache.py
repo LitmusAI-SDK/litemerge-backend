@@ -5,8 +5,6 @@ All tests are pure — no LLM calls, no network, no external deps.
 
 import copy
 
-import pytest
-
 from llm.cache import apply_cache
 
 # ---------------------------------------------------------------------------

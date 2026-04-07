@@ -111,7 +111,7 @@ async def test_execute_full_suite():
     runner, db = _make_runner()
 
     with patch("simulation.runner.PersonaSession", side_effect=_session_factory(2)) as mock_cls:
-        summary = await runner.execute(test_suite="full")
+        _summary = await runner.execute(test_suite="full")
 
     assert mock_cls.call_count == 8
 

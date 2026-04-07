@@ -12,6 +12,8 @@ Usage::
 """
 
 import base64
+import os
+import random
 import time
 from dataclasses import dataclass, field
 
@@ -193,9 +195,6 @@ class AgentCaller:
 # ---------------------------------------------------------------------------
 # Simulation layer — retry sentinel, response shape, and mock injection
 # ---------------------------------------------------------------------------
-
-import os
-import random
 
 
 class AgentRetriableError(Exception):
