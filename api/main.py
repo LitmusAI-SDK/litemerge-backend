@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 
+import redis.asyncio as aioredis
 from fastapi import FastAPI
 
 from api.middleware import ApiKeyAuthMiddleware
@@ -20,6 +21,9 @@ async def lifespan(app: FastAPI):
     app.state.mongo_client = create_mongo_client(settings.mongodb_url)
     app.state.db = get_database(app.state.mongo_client, settings.mongodb_db)
 
+    # Redis async client — used by SSE stream endpoint for pub/sub subscribe
+    app.state.redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+
     try:
         applied_migrations = await run_migrations(app.state.db)
         if applied_migrations:
@@ -34,6 +38,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await app.state.redis.aclose()
     app.state.mongo_client.close()
 
 
