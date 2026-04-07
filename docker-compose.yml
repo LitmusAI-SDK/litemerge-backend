@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      context: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
+    environment:
+      APP_ENV: development
+      MONGODB_URL: mongodb://mongo:27017
+      MONGODB_DB: litmusai
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_API_BASE_URL: http://localhost:8080
+      API_KEY_HEADER: x-api-key
+      BOOTSTRAP_API_KEY: lmai_dev_key
+      AUTH_EXEMPT_PATHS: '["/v1/health", "/docs", "/openapi.json", "/redoc"]'
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    depends_on:
+      - mongo
+      - redis
+
+  worker:
+    build:
+      context: .
+    command: celery -A worker.celery_app.celery_app worker --loglevel=info
+    environment:
+      APP_ENV: development
+      MONGODB_URL: mongodb://mongo:27017
+      MONGODB_DB: litmusai
+      REDIS_URL: redis://redis:6379/0
+      PUBLIC_API_BASE_URL: http://localhost:8080
+      API_KEY_HEADER: x-api-key
+      BOOTSTRAP_API_KEY: lmai_dev_key
+      AUTH_EXEMPT_PATHS: '["/v1/health", "/docs", "/openapi.json", "/redoc"]'
+    volumes:
+      - .:/app
+    depends_on:
+      - mongo
+      - redis
+
+  mongo:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  mongo_data:
