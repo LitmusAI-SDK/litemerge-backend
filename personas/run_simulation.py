@@ -5,7 +5,7 @@ Loads every persona from tester_profiles/ and every company from companies/,
 builds a system prompt for each pair using master_prompt.build_agent_prompt(),
 then sends the persona's opening message through local Gemma4 (Ollama).
 
-Results are printed to stdout and saved to simulation_results.json.
+Results are printed to stdout and saved to simulation_results.xlsx.
 
 Usage (from the personas/ directory):
     python run_simulation.py
@@ -14,12 +14,13 @@ Or from the project root:
     python personas/run_simulation.py
 """
 
-import json
 import re
 import sys
 import time
 from pathlib import Path
 
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
 import requests
 
 # ---------------------------------------------------------------------------
@@ -34,7 +35,7 @@ from master_prompt import build_agent_prompt  # noqa: E402
 TESTER_PROFILES_DIR = PERSONAS_DIR / "tester_profiles"
 COMPANIES_DIR = PERSONAS_DIR / "companies"
 COMPANIES_OVERVIEW = PERSONAS_DIR / "companies_overview.md"
-RESULTS_FILE = PERSONAS_DIR / "simulation_results.json"
+RESULTS_FILE = PERSONAS_DIR / "simulation_results.xlsx"
 
 # ---------------------------------------------------------------------------
 # Ollama client
@@ -195,6 +196,58 @@ def parse_company(path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Excel export
+# ---------------------------------------------------------------------------
+
+HEADERS = ["#", "Persona", "Company", "Elapsed (s)", "Opening Message", "Error"]
+HEADER_FILL = PatternFill("solid", fgColor="1F3864")
+HEADER_FONT = Font(bold=True, color="FFFFFF")
+ERROR_FILL = PatternFill("solid", fgColor="FFE0E0")
+
+
+def _save_excel(results: list[dict]) -> None:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Simulation Results"
+
+    # Header row
+    for col, header in enumerate(HEADERS, start=1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = HEADER_FONT
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.row_dimensions[1].height = 20
+
+    # Data rows
+    for i, r in enumerate(results, start=1):
+        is_error = "error" in r
+        row = [
+            i,
+            r.get("persona", ""),
+            r.get("company", ""),
+            r.get("elapsed_s", ""),
+            r.get("opening_message", "") if not is_error else "",
+            r.get("error", ""),
+        ]
+        for col, value in enumerate(row, start=1):
+            cell = ws.cell(row=i + 1, column=col, value=value)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            if is_error:
+                cell.fill = ERROR_FILL
+
+    # Column widths
+    ws.column_dimensions["A"].width = 5   # #
+    ws.column_dimensions["B"].width = 16  # Persona
+    ws.column_dimensions["C"].width = 18  # Company
+    ws.column_dimensions["D"].width = 12  # Elapsed
+    ws.column_dimensions["E"].width = 80  # Opening Message
+    ws.column_dimensions["F"].width = 40  # Error
+
+    wb.save(RESULTS_FILE)
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -254,8 +307,8 @@ def run_all() -> None:
                     "error": str(exc),
                 })
 
-    # Save results
-    RESULTS_FILE.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    # Save results to Excel
+    _save_excel(results)
     print(f"\n{'='*60}")
     print(f"Completed {count} runs. Results saved to {RESULTS_FILE.name}")
 
