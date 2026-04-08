@@ -52,7 +52,7 @@ def query_gemma(system_msg: str, user_msg: str) -> str:
         ],
         "stream": False,
     }
-    response = requests.post(OLLAMA_URL, json=payload, timeout=180)
+    response = requests.post(OLLAMA_URL, json=payload, timeout=300)
     response.raise_for_status()
     return response.json()["message"]["content"]
 
@@ -121,11 +121,20 @@ def parse_persona(path: Path) -> dict:
 
     full_identity = "\n\n".join(filter(None, [identity_block, behavioural]))
 
+    raw_openers = _extract_section(md, "example openers")
+    opener_lines = [
+        line.strip().lstrip("- ").strip('"')
+        for line in raw_openers.splitlines()
+        if line.strip().startswith("- ")
+    ]
+    example_openers = "\n".join(f'- "{o}"' for o in opener_lines if o)
+
     return {
         "name": name,
         "brief_identity": brief_identity,
         "identity_block": full_identity or identity_block,
         "tone": re.sub(r"\*\*", "", tone_raw).strip(),
+        "example_openers": example_openers,
         "interaction_rules": _extract_section(md, "interaction rules"),
         "failure_patterns": _extract_section(md, "failure patterns"),
         "role_anchor": _extract_section(md, "role anchor"),
@@ -168,12 +177,15 @@ def parse_company(path: Path) -> dict:
     capabilities = _extract_section(md, "3.", "core capabilities")
     test_scenarios = _extract_section(md, "4.", "test case parameters")
 
+    system_rules = _extract_section(md, "5.", "system instructions")
+
     return {
         "bot_name": bot_name,
         "company_name": company_name,
         "industry": industry,
         "capabilities_summary": capabilities,
         "test_scenarios": test_scenarios,
+        "system_rules": system_rules,
     }
 
 
