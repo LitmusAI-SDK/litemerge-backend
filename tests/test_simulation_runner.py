@@ -12,11 +12,14 @@ from simulation.runner import SUITE_PERSONAS, SimulationRun
 # override this patch locally.
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def stub_evaluation_engine():
     """Prevent all runner tests from invoking the real EvaluationEngine / LLM."""
     mock_engine = MagicMock()
-    mock_engine.evaluate_run = AsyncMock(return_value={"score": 95, "issues_flagged": 1})
+    mock_engine.evaluate_run = AsyncMock(
+        return_value={"score": 95, "issues_flagged": 1}
+    )
     with patch("evaluation.engine.EvaluationEngine", return_value=mock_engine):
         yield mock_engine
 
@@ -337,7 +340,9 @@ async def test_execute_all_failed_skips_evaluation(stub_evaluation_engine):
 @pytest.mark.anyio
 async def test_execute_evaluation_error_does_not_fail_run(stub_evaluation_engine):
     """If evaluation engine raises, the run should still complete (not fail)."""
-    stub_evaluation_engine.evaluate_run = AsyncMock(side_effect=RuntimeError("LLM error"))
+    stub_evaluation_engine.evaluate_run = AsyncMock(
+        side_effect=RuntimeError("LLM error")
+    )
 
     runner, db = _make_runner()
     session_mock = MagicMock()

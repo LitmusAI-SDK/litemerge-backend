@@ -75,7 +75,8 @@ class EvaluationEngine:
 
         if not sessions:
             logger.warning(
-                "EvaluationEngine: no completed sessions found for run %s; score=100", run_id
+                "EvaluationEngine: no completed sessions found for run %s; score=100",
+                run_id,
             )
             return {"score": 100, "issues_flagged": 0}
 
@@ -121,7 +122,5 @@ class EvaluationEngine:
 
     async def _fetch_sessions(self, run_id: str) -> list[dict]:
         """Fetch all *completed* chat_log documents for the given run."""
-        cursor = self.db["chat_logs"].find(
-            {"run_id": run_id, "status": "completed"}
-        )
+        cursor = self.db["chat_logs"].find({"run_id": run_id, "status": "completed"})
         return await cursor.to_list(length=None)

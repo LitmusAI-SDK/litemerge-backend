@@ -106,7 +106,9 @@ def _parse_findings(raw: str) -> list[DetectedFinding]:
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
-        logger.warning("BehaviorDetector: could not parse LLM output as JSON: %r", raw[:200])
+        logger.warning(
+            "BehaviorDetector: could not parse LLM output as JSON: %r", raw[:200]
+        )
         return []
 
     if not isinstance(parsed, list):
@@ -175,12 +177,15 @@ async def analyze_session(session_doc: dict) -> list[DetectedFinding]:
         )
         findings = _parse_findings(response.content)
         logger.debug(
-            "BehaviorDetector: session=%s found=%d violation(s)", session_id, len(findings)
+            "BehaviorDetector: session=%s found=%d violation(s)",
+            session_id,
+            len(findings),
         )
         return findings
 
     except Exception:
         logger.exception(
-            "BehaviorDetector: LLM call failed for session %s — skipping session", session_id
+            "BehaviorDetector: LLM call failed for session %s — skipping session",
+            session_id,
         )
         return []

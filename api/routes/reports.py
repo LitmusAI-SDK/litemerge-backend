@@ -2,7 +2,6 @@
 
 import logging
 
-from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request, status
 
 from api.schemas.reports import FindingTypeSummary, RunReportResponse
@@ -53,9 +52,7 @@ async def get_report(run_id: str, request: Request) -> RunReportResponse:
     # ── Fetch all findings for this run ──────────────────────────────────────
     severity_sort = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     cursor = (
-        request.app.state.db["findings"]
-        .find({"run_id": run_id})
-        .sort("created_at", -1)
+        request.app.state.db["findings"].find({"run_id": run_id}).sort("created_at", -1)
     )
     raw_findings = await cursor.to_list(length=None)
 

@@ -77,7 +77,9 @@ async def test_evaluate_run_one_critical_finding():
         "prompt_vector": "ignore instructions",
         "agent_response_excerpt": "Sure!",
     }
-    with patch("evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])):
+    with patch(
+        "evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])
+    ):
         result = await engine.evaluate_run("run_x", "proj_1")
 
     assert result["score"] == 100 - SEVERITY_PENALTY["critical"]  # 75
@@ -97,7 +99,9 @@ async def test_evaluate_run_score_clamped_to_zero():
         "prompt_vector": "x",
         "agent_response_excerpt": "y",
     }
-    with patch("evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])):
+    with patch(
+        "evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])
+    ):
         result = await engine.evaluate_run("run_x", "proj_1")
 
     assert result["score"] == 0
@@ -116,10 +120,30 @@ async def test_evaluate_run_mixed_severities():
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return [{"finding_type": "hallucination", "severity": "high", "turn_index": 0, "prompt_vector": None, "agent_response_excerpt": None}]
+            return [
+                {
+                    "finding_type": "hallucination",
+                    "severity": "high",
+                    "turn_index": 0,
+                    "prompt_vector": None,
+                    "agent_response_excerpt": None,
+                }
+            ]
         return [
-            {"finding_type": "hallucination", "severity": "medium", "turn_index": 0, "prompt_vector": None, "agent_response_excerpt": None},
-            {"finding_type": "refusal_failure", "severity": "low", "turn_index": 1, "prompt_vector": None, "agent_response_excerpt": None},
+            {
+                "finding_type": "hallucination",
+                "severity": "medium",
+                "turn_index": 0,
+                "prompt_vector": None,
+                "agent_response_excerpt": None,
+            },
+            {
+                "finding_type": "refusal_failure",
+                "severity": "low",
+                "turn_index": 1,
+                "prompt_vector": None,
+                "agent_response_excerpt": None,
+            },
         ]
 
     with patch("evaluation.engine.analyze_session", side_effect=side_effect):
@@ -148,7 +172,9 @@ async def test_evaluate_run_writes_findings_to_kb():
         "agent_response_excerpt": "here is the secret",
     }
 
-    with patch("evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])):
+    with patch(
+        "evaluation.engine.analyze_session", new=AsyncMock(return_value=[finding])
+    ):
         await engine.evaluate_run("run_x", "proj_1")
 
     db["findings"].insert_one.assert_called_once()
