@@ -6,6 +6,20 @@ import pytest
 
 from simulation.runner import SUITE_PERSONAS, SimulationRun
 
+# ---------------------------------------------------------------------------
+# Module-level patch: stub out EvaluationEngine so all runner tests avoid
+# real LLM calls. Tests that specifically verify evaluation behaviour will
+# override this patch locally.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def stub_evaluation_engine():
+    """Prevent all runner tests from invoking the real EvaluationEngine / LLM."""
+    mock_engine = MagicMock()
+    mock_engine.evaluate_run = AsyncMock(return_value={"score": 95, "issues_flagged": 1})
+    with patch("evaluation.engine.EvaluationEngine", return_value=mock_engine):
+        yield mock_engine
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -260,3 +274,98 @@ async def test_unknown_suite_falls_back_to_standard():
         await runner.execute(test_suite="unknown_suite")
 
     assert mock_cls.call_count == 7  # standard = 7 personas
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: evaluation engine integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_execute_transitions_through_evaluating(stub_evaluation_engine):
+    """Run doc must pass through 'evaluating' before 'complete'."""
+    runner, db = _make_runner()
+
+    session_mock = MagicMock()
+    session_mock.run = AsyncMock(return_value=[MagicMock()])
+
+    with patch("simulation.runner.PersonaSession", return_value=session_mock):
+        await runner.execute(test_suite="adversarial")
+
+    statuses = [c[0][1]["$set"]["status"] for c in db["runs"].update_one.call_args_list]
+    assert "evaluating" in statuses
+    # evaluating must come before complete
+    assert statuses.index("evaluating") < statuses.index("complete")
+
+
+@pytest.mark.anyio
+async def test_execute_score_from_evaluation_engine(stub_evaluation_engine):
+    """Score returned by EvaluationEngine should be stored in the run doc."""
+    stub_evaluation_engine.evaluate_run = AsyncMock(
+        return_value={"score": 72, "issues_flagged": 3}
+    )
+
+    runner, db = _make_runner()
+    session_mock = MagicMock()
+    session_mock.run = AsyncMock(return_value=[MagicMock()])
+
+    with patch("simulation.runner.PersonaSession", return_value=session_mock):
+        result = await runner.execute(test_suite="adversarial")
+
+    assert result["score"] == 72
+    assert result["issues_flagged"] == 3
+
+    # Check that DB update_one for completion includes score=72
+    completion_call = db["runs"].update_one.call_args_list[-1]
+    assert completion_call[0][1]["$set"]["score"] == 72
+
+
+@pytest.mark.anyio
+async def test_execute_all_failed_skips_evaluation(stub_evaluation_engine):
+    """If every session fails the evaluation engine must not be called."""
+    runner, db = _make_runner()
+
+    session_mock = MagicMock()
+    session_mock.run = AsyncMock(side_effect=RuntimeError("agent down"))
+
+    with patch("simulation.runner.PersonaSession", return_value=session_mock):
+        await runner.execute(test_suite="adversarial")
+
+    stub_evaluation_engine.evaluate_run.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_execute_evaluation_error_does_not_fail_run(stub_evaluation_engine):
+    """If evaluation engine raises, the run should still complete (not fail)."""
+    stub_evaluation_engine.evaluate_run = AsyncMock(side_effect=RuntimeError("LLM error"))
+
+    runner, db = _make_runner()
+    session_mock = MagicMock()
+    session_mock.run = AsyncMock(return_value=[MagicMock()])
+
+    with patch("simulation.runner.PersonaSession", return_value=session_mock):
+        result = await runner.execute(test_suite="adversarial")
+
+    statuses = [c[0][1]["$set"]["status"] for c in db["runs"].update_one.call_args_list]
+    assert statuses[-1] == "complete"
+    assert result["score"] is None
+
+
+@pytest.mark.anyio
+async def test_run_complete_event_includes_score():
+    """The run_complete Redis event should carry the score field."""
+    mock_redis = MagicMock()
+    mock_redis.publish = AsyncMock()
+
+    runner, _ = _make_runner(redis=mock_redis)
+    session_mock = MagicMock()
+    session_mock.run = AsyncMock(return_value=[MagicMock()])
+
+    with patch("simulation.runner.PersonaSession", return_value=session_mock):
+        await runner.execute(test_suite="adversarial")
+
+    import json
+
+    events = [json.loads(c[0][1]) for c in mock_redis.publish.call_args_list]
+    run_complete = next(e for e in events if e["event"] == "run_complete")
+    assert "score" in run_complete

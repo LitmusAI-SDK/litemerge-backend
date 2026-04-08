@@ -7,14 +7,14 @@ Responsibilities:
   - Publishes structured progress events to a Redis pub/sub channel so the SSE
     endpoint and dashboard can stream live updates.
   - Advances the run document through the state machine:
-      queued → running → complete | failed
+      queued → running → evaluating → complete | failed
 
 Event schema (JSON, published to channel "run:{run_id}"):
   { "event": "session_started",   "run_id": ..., "persona_id": ... }
   { "event": "session_completed", "run_id": ..., "persona_id": ..., "turns": N }
   { "event": "session_failed",    "run_id": ..., "persona_id": ..., "error": "..." }
   { "event": "run_complete",      "run_id": ..., "status": "complete"|"failed",
-    "total_sessions": N, "failed_sessions": N }
+    "total_sessions": N, "failed_sessions": N, "score": int|None }
 """
 
 from __future__ import annotations
@@ -136,10 +136,36 @@ class SimulationRun:
             "total_conversations": total_turns,
             "personas_deployed": total,
             "sessions_failed": len(failed),
-            "issues_flagged": 0,  # Phase 6: evaluation engine fills this
+            "issues_flagged": 0,
         }
 
-        await self._update_run_complete(overall_status, summary)
+        # ── Phase 6: evaluation engine ────────────────────────────────────────
+        score: int | None = None
+        if overall_status != "failed":
+            await self._update_run_status("evaluating")
+            try:
+                from evaluation.engine import EvaluationEngine
+
+                project_id = str(self.project_config.get("_id", ""))
+                engine = EvaluationEngine(self.db)
+                eval_result = await engine.evaluate_run(self.run_id, project_id)
+                score = eval_result["score"]
+                summary["issues_flagged"] = eval_result["issues_flagged"]
+                logger.info(
+                    "SimulationRun %s evaluation complete — score=%d issues=%d",
+                    self.run_id,
+                    score,
+                    eval_result["issues_flagged"],
+                )
+            except Exception:
+                logger.exception(
+                    "SimulationRun %s: evaluation engine raised an error — "
+                    "run will complete with score=None",
+                    self.run_id,
+                )
+        # ─────────────────────────────────────────────────────────────────────
+
+        await self._update_run_complete(overall_status, summary, score)
         await self._publish(
             {
                 "event": "run_complete",
@@ -147,17 +173,19 @@ class SimulationRun:
                 "status": overall_status,
                 "total_sessions": total,
                 "failed_sessions": len(failed),
+                "score": score,
             }
         )
 
         logger.info(
-            "SimulationRun %s finished — status=%s sessions=%d failed=%d",
+            "SimulationRun %s finished — status=%s sessions=%d failed=%d score=%s",
             self.run_id,
             overall_status,
             total,
             len(failed),
+            score,
         )
-        return summary
+        return {**summary, "score": score}
 
     # ------------------------------------------------------------------
     # Per-session wrapper
@@ -211,13 +239,16 @@ class SimulationRun:
             {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
         )
 
-    async def _update_run_complete(self, status: str, summary: dict) -> None:
+    async def _update_run_complete(
+        self, status: str, summary: dict, score: int | None
+    ) -> None:
         await self.db["runs"].update_one(
             {"run_id": self.run_id},
             {
                 "$set": {
                     "status": status,
                     "summary": summary,
+                    "score": score,
                     "updated_at": datetime.now(timezone.utc),
                     "completed_at": datetime.now(timezone.utc),
                 }

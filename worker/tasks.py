@@ -9,12 +9,14 @@ fresh per task invocation.
 """
 
 import asyncio
+import logging
 
 from celery.utils.log import get_task_logger
 
 from worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
+_webhook_logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="worker.ping")
@@ -81,6 +83,12 @@ async def _execute(run_id: str) -> dict:
 
         summary = await runner.execute(test_suite=test_suite)
         logger.info("process_run complete run_id=%s summary=%s", run_id, summary)
+
+        # Send webhook notification if the run configured one
+        run_doc_final = await db["runs"].find_one({"run_id": run_id})
+        if run_doc_final and run_doc_final.get("notify_webhook"):
+            await _notify_webhook(run_doc_final)
+
         return {"run_id": run_id, "status": "complete", "summary": summary}
 
     except Exception as exc:
@@ -103,3 +111,48 @@ async def _mark_failed(db, run_id: str) -> None:
         )
     except Exception:
         pass
+
+
+async def _notify_webhook(run_doc: dict) -> None:
+    """POST a completion payload to the run's notify_webhook URL.
+
+    Fires-and-forgets: errors are logged but never propagate to the caller.
+    The payload mirrors the data a CI system needs to pass/fail its pipeline.
+    """
+    import httpx
+
+    url = run_doc.get("notify_webhook")
+    if not url:
+        return
+
+    score = run_doc.get("score")
+    fail_threshold = run_doc.get("fail_threshold", 70)
+    passed: bool | None = None
+    if score is not None:
+        passed = score >= fail_threshold
+
+    payload = {
+        "run_id": run_doc.get("run_id"),
+        "status": run_doc.get("status"),
+        "score": score,
+        "passed": passed,
+        "fail_threshold": fail_threshold,
+        "summary": run_doc.get("summary"),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload)
+            _webhook_logger.info(
+                "Webhook delivered run_id=%s url=%s status=%d",
+                run_doc.get("run_id"),
+                url,
+                resp.status_code,
+            )
+    except Exception:
+        _webhook_logger.warning(
+            "Webhook delivery failed for run_id=%s url=%s",
+            run_doc.get("run_id"),
+            url,
+            exc_info=True,
+        )
