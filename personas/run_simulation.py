@@ -1,17 +1,20 @@
 """
-run_simulation.py — LitmusAI agent prompt generator.
+run_simulation.py — LitmusAI conversation simulator.
 
-Loads every persona from tester_profiles/ and every company from companies/,
-sends the persona + company data to Gemma4 via the master prompt, and stores
-the generated system prompts in simulation_results.xlsx.
+For every persona × company pair:
+  1. Generates a persona system prompt via Gemma4 (the "human tester" LLM).
+  2. Builds a chatbot system prompt from the company profile.
+  3. Runs an N-turn conversation: persona LLM ↔ chatbot LLM.
+  4. Saves the full conversation transcript to simulation_results.xlsx.
 
 Usage (from the personas/ directory):
-    python run_simulation.py
+    python run_simulation.py [--turns N]
 
 Or from the project root:
-    python personas/run_simulation.py
+    python personas/run_simulation.py [--turns N]
 """
 
+import argparse
 import re
 import sys
 import time
@@ -28,8 +31,6 @@ import requests
 PERSONAS_DIR = Path(__file__).parent
 sys.path.insert(0, str(PERSONAS_DIR))
 
-from master_prompt import build_generation_request  # noqa: E402
-
 TESTER_PROFILES_DIR = PERSONAS_DIR / "tester_profiles"
 COMPANIES_DIR = PERSONAS_DIR / "companies"
 COMPANIES_OVERVIEW = PERSONAS_DIR / "companies_overview.md"
@@ -43,13 +44,11 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "gemma4:latest"
 
 
-def query_gemma(system_msg: str, user_msg: str) -> str:
+def query_gemma_chat(system_msg: str, messages: list[dict]) -> str:
+    """Multi-turn call — messages is the full conversation history so far."""
     payload = {
         "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
+        "messages": [{"role": "system", "content": system_msg}] + messages,
         "stream": False,
     }
     response = requests.post(OLLAMA_URL, json=payload, timeout=300)
@@ -190,10 +189,126 @@ def parse_company(path: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Persona prompt builder (directly from parsed file — no LLM generation)
+# ---------------------------------------------------------------------------
+
+
+def build_persona_prompt(persona: dict) -> str:
+    """Construct a persona system prompt directly from the tester profile file."""
+    parts: list[str] = []
+
+    if persona.get("role_anchor"):
+        parts.append(persona["role_anchor"].strip())
+
+    if persona.get("identity_block"):
+        parts += ["", "## Who You Are", persona["identity_block"].strip()]
+
+    if persona.get("tone"):
+        parts += ["", "## Tone", persona["tone"].strip()]
+
+    if persona.get("interaction_rules"):
+        parts += ["", "## Interaction Rules", persona["interaction_rules"].strip()]
+
+    if persona.get("failure_patterns"):
+        parts += ["", "## Failure Patterns (apply these naturally)", persona["failure_patterns"].strip()]
+
+    if persona.get("example_openers"):
+        parts += ["", "## Example Openers (use one to start, then improvise)", persona["example_openers"].strip()]
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Chatbot prompt builder
+# ---------------------------------------------------------------------------
+
+
+def build_chatbot_prompt(company: dict) -> str:
+    """Build a system prompt for the chatbot LLM from the company profile."""
+    parts = [
+        f"You are {company['bot_name']}, the official customer service chatbot for {company['company_name']}.",
+        "",
+    ]
+    if company.get("capabilities_summary"):
+        parts += ["## Your Capabilities", company["capabilities_summary"].strip(), ""]
+    if company.get("system_rules"):
+        parts += ["## Rules You Must Follow", company["system_rules"].strip(), ""]
+    parts += [
+        "Respond helpfully and concisely. Stay fully in character as the chatbot at all times.",
+        "Never break character or acknowledge that you are an LLM or part of a simulation.",
+        "You will NEVER use internal formatting syntax like markdown bold or headers in your replies — "
+        "respond in plain conversational text only.",
+    ]
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Conversation runner
+# ---------------------------------------------------------------------------
+
+
+def run_conversation(
+    persona_prompt: str,
+    chatbot_prompt: str,
+    persona_name: str,
+    bot_name: str,
+    n_turns: int = 8,
+) -> list[dict]:
+    """Run a full multi-turn conversation between the persona and the chatbot.
+
+    Each turn: the persona LLM generates a message, then the chatbot LLM replies.
+    The history is maintained separately for each side so each model sees itself
+    as "assistant" and the other as "user".
+
+    Returns a list of {"persona": str, "bot": str} dicts, one per turn.
+    """
+    transcript: list[dict] = []
+
+    for turn_num in range(1, n_turns + 1):
+        print(f"\n  --- Turn {turn_num}/{n_turns} ---")
+
+        # Persona's view: its own past messages are "assistant", bot replies are "user"
+        persona_messages: list[dict] = []
+        for t in transcript:
+            persona_messages.append({"role": "assistant", "content": t["persona"]})
+            persona_messages.append({"role": "user", "content": t["bot"]})
+
+        print(f"  {persona_name}: ", end="", flush=True)
+        persona_msg = query_gemma_chat(persona_prompt, persona_messages)
+        print(persona_msg.strip())
+
+        # Chatbot's view: persona messages are "user", its own past replies are "assistant"
+        chatbot_messages: list[dict] = []
+        for t in transcript:
+            chatbot_messages.append({"role": "user", "content": t["persona"]})
+            chatbot_messages.append({"role": "assistant", "content": t["bot"]})
+        chatbot_messages.append({"role": "user", "content": persona_msg})
+
+        print(f"  {bot_name}: ", end="", flush=True)
+        chatbot_msg = query_gemma_chat(chatbot_prompt, chatbot_messages)
+        print(chatbot_msg.strip())
+
+        transcript.append({"persona": persona_msg, "bot": chatbot_msg})
+
+    return transcript
+
+
+def format_transcript(transcript: list[dict]) -> str:
+    """Format a conversation transcript as a readable string for Excel."""
+    lines: list[str] = []
+    for i, turn in enumerate(transcript, start=1):
+        lines.append(f"[Turn {i}]")
+        lines.append(f"PERSONA: {turn['persona'].strip()}")
+        lines.append(f"BOT:     {turn['bot'].strip()}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+# ---------------------------------------------------------------------------
 # Excel export
 # ---------------------------------------------------------------------------
 
-HEADERS = ["#", "Persona", "Company", "Elapsed (s)", "Generated System Prompt", "Error"]
+HEADERS = ["#", "Persona", "Company", "Turns", "Elapsed (s)", "Conversation Transcript", "Error"]
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 ERROR_FILL = PatternFill("solid", fgColor="FFE0E0")
@@ -203,7 +318,7 @@ def _init_excel() -> None:
     """Create the results file with headers and column widths."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Generated Prompts"
+    ws.title = "Simulation Transcripts"
 
     for col, header in enumerate(HEADERS, start=1):
         cell = ws.cell(row=1, column=col, value=header)
@@ -215,9 +330,10 @@ def _init_excel() -> None:
     ws.column_dimensions["A"].width = 5    # #
     ws.column_dimensions["B"].width = 16   # Persona
     ws.column_dimensions["C"].width = 18   # Company
-    ws.column_dimensions["D"].width = 12   # Elapsed
-    ws.column_dimensions["E"].width = 120  # Generated System Prompt
-    ws.column_dimensions["F"].width = 40   # Error
+    ws.column_dimensions["D"].width = 8    # Turns
+    ws.column_dimensions["E"].width = 12   # Elapsed
+    ws.column_dimensions["F"].width = 120  # Conversation Transcript
+    ws.column_dimensions["G"].width = 40   # Error
 
     wb.save(RESULTS_FILE)
 
@@ -231,8 +347,9 @@ def _append_row(result: dict, row_num: int) -> None:
         row_num,
         result.get("persona", ""),
         result.get("company", ""),
+        result.get("turns", ""),
         result.get("elapsed_s", ""),
-        result.get("generated_prompt", "") if not is_error else "",
+        result.get("transcript", "") if not is_error else "",
         result.get("error", ""),
     ]
     excel_row = row_num + 1  # +1 for header row
@@ -249,7 +366,7 @@ def _append_row(result: dict, row_num: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def run_all() -> None:
+def run_all(n_turns: int = 8) -> None:
     personas = sorted(TESTER_PROFILES_DIR.glob("p*.md"))
     companies = sorted(COMPANIES_DIR.glob("c*.md"))
 
@@ -264,7 +381,10 @@ def run_all() -> None:
     company_dicts = [parse_company(c) for c in companies]
 
     total = len(persona_dicts) * len(company_dicts)
-    print(f"Generating prompts: {len(persona_dicts)} personas × {len(company_dicts)} companies = {total} combinations\n")
+    print(
+        f"Running simulations: {len(persona_dicts)} personas × {len(company_dicts)} companies"
+        f" = {total} conversations ({n_turns} turns each)\n"
+    )
 
     _init_excel()
     count = 0
@@ -273,20 +393,32 @@ def run_all() -> None:
         for company in company_dicts:
             count += 1
             label = f"[{count:02d}/{total}] {persona['name']} × {company['company_name']}"
-            print(f"{label} ... ", end="", flush=True)
+            print(f"{label}")
 
             try:
-                system_msg, user_msg = build_generation_request(persona, company)
                 t0 = time.time()
-                generated_prompt = query_gemma(system_msg, user_msg)
-                elapsed = round(time.time() - t0, 1)
 
-                print(f"done ({elapsed}s)")
+                # Step 1: Build prompts directly from profile files (no LLM generation)
+                persona_prompt = build_persona_prompt(persona)
+                chatbot_prompt = build_chatbot_prompt(company)
+
+                # Step 2: Run the conversation
+                t1 = time.time()
+                transcript = run_conversation(
+                    persona_prompt, chatbot_prompt,
+                    persona_name=persona["name"],
+                    bot_name=company["bot_name"],
+                    n_turns=n_turns,
+                )
+                elapsed = round(time.time() - t0, 1)
+                print(f"\n  Finished in {elapsed}s")
+
                 result = {
                     "persona": persona["name"],
                     "company": company["company_name"],
+                    "turns": n_turns,
                     "elapsed_s": elapsed,
-                    "generated_prompt": generated_prompt,
+                    "transcript": format_transcript(transcript),
                 }
 
             except requests.exceptions.ConnectionError:
@@ -294,7 +426,7 @@ def run_all() -> None:
                 print("  Make sure Ollama is running: ollama serve")
                 sys.exit(1)
             except Exception as exc:
-                print(f"ERROR — {exc}")
+                print(f"  ERROR — {exc}")
                 result = {
                     "persona": persona["name"],
                     "company": company["company_name"],
@@ -304,8 +436,14 @@ def run_all() -> None:
             _append_row(result, count)
 
     print(f"\n{'='*60}")
-    print(f"Done. {count} prompts generated and saved to {RESULTS_FILE.name}")
+    print(f"Done. {count} conversations saved to {RESULTS_FILE.name}")
 
 
 if __name__ == "__main__":
-    run_all()
+    parser = argparse.ArgumentParser(description="LitmusAI conversation simulator")
+    parser.add_argument(
+        "--turns", type=int, default=8,
+        help="Number of conversation turns per simulation (default: 8)",
+    )
+    args = parser.parse_args()
+    run_all(n_turns=args.turns)
