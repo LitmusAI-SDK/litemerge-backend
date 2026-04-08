@@ -5,7 +5,7 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI
 
 from api.middleware import ApiKeyAuthMiddleware
-from api.routes import health, projects, reports, runs
+from api.routes import findings, health, projects, reports, runs
 from core.config import settings
 from db.migrations import run_migrations
 from db.mongodb import (
@@ -59,3 +59,4 @@ app.include_router(health, prefix="/v1")
 app.include_router(runs, prefix="/v1")
 app.include_router(projects, prefix="/v1")
 app.include_router(reports, prefix="/v1")
+app.include_router(findings, prefix="/v1")

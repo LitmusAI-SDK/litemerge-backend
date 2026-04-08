@@ -26,8 +26,9 @@ from tenacity import (
 from core.config import settings
 from llm.caller import agenerate
 from llm.models import LLMResponse
+from kb.reader import KBReader
 from personas.engine import PersonaEngine
-from personas.loader import PersonaProfile
+from personas.loader import PersonaLoader, PersonaProfile
 from caller.agent_caller import (
     AgentResponse,
     AgentRetriableError,
@@ -129,11 +130,22 @@ class PersonaSession:
             "domain_vocabulary": self.project_config.get("domain_vocabulary", ""),
             "application_domain": self.project_config.get("domain", ""),
         }
+
+        # Load profile first to resolve persona_type needed for the KB query.
+        _loader = PersonaLoader(profiles_dir=self._profiles_dir)
+        _pre_profile = _loader.load(self.persona_id)
+
+        raw_kb_findings = await KBReader().get_findings(
+            self.db,
+            str(self.project_config.get("_id", "")),
+            persona_type=_pre_profile.persona_type,
+        )
+
         engine = PersonaEngine(profiles_dir=self._profiles_dir)
         system_prompt, profile = engine.build_prompt(
             persona_id=self.persona_id,
             domain_context=domain_context,
-            raw_kb_findings=[],  # Phase 5: replace with live findings
+            raw_kb_findings=raw_kb_findings,
         )
 
         # ── Step 3: Initialise Gemini cache if applicable ───────────────────

@@ -14,4 +14,4 @@ def test_migrations_are_version_sorted() -> None:
 
     versions = [migration.version for migration in migrations]
     assert versions == sorted(versions)
-    assert versions[-1] == 3
+    assert versions[-1] == 4

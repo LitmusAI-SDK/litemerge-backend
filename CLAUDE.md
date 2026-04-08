@@ -102,19 +102,30 @@
 - Async tests use `@pytest.mark.anyio` — only `asyncio` backend (trio not installed).
 - `tests/conftest.py` patches Mongo startup functions AND `aioredis.from_url` so `TestClient` starts without live infrastructure.
 
+### Completed: Phase 5 (Vulnerability KB Store + Read/Write)
+- `findings` collection with 5 indexes (project+created, project+persona, project+severity, run_id, finding_type).
+- Migration `v0004_findings.py`.
+- `kb/writer.py` — `KBWriter.write_finding(db, ...)` inserts a finding, returns inserted ID.
+- `kb/reader.py` — `KBReader.get_findings(db, project_id, persona_type, limit)` fetches findings filtered by persona_type OR critical severity, sorted critical→high→medium→low.
+- `PersonaSession.run()` now loads persona profile pre-session to resolve `persona_type`, calls `KBReader.get_findings()`, and passes live findings to `PersonaEngine.build_prompt()` (replacing the `raw_kb_findings=[]` stub).
+- `POST /v1/findings` — manually seed a finding (API key project-scoped). Useful for testing persona enrichment before Phase 6 evaluation engine writes findings automatically.
+- `GET /v1/findings?project_id=...` — list findings; supports `persona_type`, `severity`, `limit`, `offset` query params.
+- Finding types: `prompt_injection_success`, `boundary_violation`, `hallucination`, `inappropriate_response`, `refusal_failure`.
+- Severity: `critical | high | medium | low`.
+
 ## Next Recommended Phase
-- Phase 5: Vulnerability KB store + read/write
-  - `findings` collection: `project_id`, `run_id`, `persona_type`, `prompt_vector`, `agent_response_excerpt`, `finding_type`, `severity`
-  - `KBWriter`: called post-run by evaluation engine, writes flagged behaviors
-  - `KBReader`: called by `PersonaEngine` pre-session, returns top-N findings for project (wired but empty in Phase 3)
-  - Finding types: `prompt_injection_success`, `boundary_violation`, `hallucination`, `inappropriate_response`, `refusal_failure`
-  - Severity: `critical | high | medium | low`
-  - Migration `v0004_findings.py`
+- Phase 6: Evaluation engine + scoring
+  - Post-run evaluation: analyze `chat_logs` for each session, detect flagged behaviors, write findings via `KBWriter`.
+  - Score computation: aggregate findings by severity into a numeric score (0–100).
+  - `run.status` transitions through `evaluating` (currently skipped straight to `complete`) then `complete`.
+  - `run.score` and `run.summary` populated after evaluation.
+  - `GET /v1/reports/{run_id}` — structured report (currently a scaffold in `api/routes/reports.py`).
+  - Webhook notification on run completion (`notify_webhook` field already persisted on the run doc).
 
 ## Notes for Future Sessions
 - MongoDB instead of Postgres — intentional. No SQLAlchemy anywhere.
 - Keep all DB shape/index changes in migration scripts, not ad-hoc startup logic.
 - Preserve API key scoping behavior when adding new routes that reference `project_id`.
 - `caller/agent_caller.py` is the single source for all agent-calling logic — do not create new caller modules.
-- Phase 5 KB read path slot is already wired in `PersonaSession` as `raw_kb_findings=[]` — replace with live `KBReader` call.
+- `kb/writer.py` and `kb/reader.py` are the canonical KB I/O modules — do not duplicate KB logic elsewhere.
 - `evaluating` run status is reserved in the schema for Phase 6; runner currently skips straight to `complete`.
