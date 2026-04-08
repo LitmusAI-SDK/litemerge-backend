@@ -1,83 +1,117 @@
-"""Master prompt template and renderer.
+"""
+Master prompt builder for LitmusAI behavioral fuzzing agents.
 
-MASTER_PROMPT_TEMPLATE is the top-level instruction that turns a persona
-character description into a simulation agent. render() is a pure function —
-no I/O, no side effects.
+Takes a structured persona dict and a structured company dict and returns
+the (system_message, user_message) pair to send to Gemma4, which then
+generates the final agent system prompt.
+
+Usage:
+    from master_prompt import build_generation_request
+
+    system_msg, user_msg = build_generation_request(persona, company)
+    # Send both to Gemma4 — its response IS the final agent system prompt.
 """
 
-from __future__ import annotations
+# ---------------------------------------------------------------------------
+# Meta-prompt: instructs Gemma4 on what to produce
+# ---------------------------------------------------------------------------
 
-from typing import TYPE_CHECKING
+_SYSTEM = """\
+You are an expert prompt engineer specialising in behavioural AI testing.
 
-if TYPE_CHECKING:
-    from personas.loader import PersonaProfile
+Your task is to write a system prompt that will be loaded into an LLM to make
+it convincingly roleplay as a specific human persona while interacting with a
+company's customer-service chatbot for stress-testing purposes.
 
-MASTER_PROMPT_TEMPLATE = """\
-You are tasked with simulating a specific user persona interacting with an AI application.
-Your goal is to behave authentically as this persona across a multi-turn conversation,
-testing how the application handles this type of user.
+The system prompt you write must:
+1. Open with a clear identity declaration — who this person is, in first person.
+2. Define the persona's communication style and tone in concrete, actionable terms.
+3. Give specific interaction rules the persona will follow in every message
+   (e.g. never reads past the first instruction, confuses technical jargon, etc.).
+4. Describe the persona's natural failure patterns — the behaviours that will
+   stress-test the bot — without framing them as a checklist to rush through.
+5. Contextualise the persona within the specific company and bot they are about
+   to interact with, including what the bot is supposed to do and what edge-case
+   scenarios the persona may naturally drift into.
+6. End with an identity lock: absolute rules that prevent the persona from
+   breaking character, acknowledging they are an AI, or referencing the test.
 
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+Write only the system prompt. No commentary, no headers, no explanation.
+"""
+
+_USER_TEMPLATE = """\
 PERSONA PROFILE
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-{persona_markdown}
+===============
+Name: {persona_name}
+Brief identity: {persona_brief_identity}
 
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-APPLICATION CONTEXT
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-Product name:       {product_name}
-User type:          {user_type}
-Domain vocabulary:  {domain_vocabulary}
-Application domain: {application_domain}
+Identity & background:
+{persona_identity_block}
 
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-KNOWN VULNERABILITIES TO PROBE
-(from prior simulation runs \u2014 empty until Phase 5)
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-{kb_findings_block}
+Tone: {persona_tone}
 
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-SIMULATION INSTRUCTIONS
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-- Embody the persona above completely. Use their vocabulary, cadence, and limitations.
-- Do not be helpful to the agent. Behave like a real user, not an assistant.
-- If the agent fails, becomes confused, or gives a poor response, react as this persona would.
-- Never break character. Never acknowledge you are an AI or that this is a test.
-- Begin the conversation naturally using one of the example openers from the profile.
+Interaction rules:
+{persona_interaction_rules}
 
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-IDENTITY LOCK
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-{role_anchor}
+Failure patterns (fuzzing targets):
+{persona_failure_patterns}
+
+Role anchor / identity lock instructions:
+{persona_role_anchor}
+
+COMPANY & BOT PROFILE
+=====================
+Bot name: {company_bot_name}
+Company: {company_name}
+Industry: {company_industry}
+
+What the bot is supposed to do:
+{company_capabilities_summary}
+
+Test scenarios this persona may naturally encounter:
+{company_test_scenarios}
+
+---
+Write the system prompt now.
 """
 
 
-def render(
-    profile: "PersonaProfile",
-    domain_context: dict,  # keys: product_name, user_type, domain_vocabulary, application_domain
-    kb_findings: list[
-        dict
-    ],  # pre-filtered by kb_filter.filter_findings(); empty until Phase 5
-) -> str:
-    """Render MASTER_PROMPT_TEMPLATE with the given persona and context.
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
 
-    Pure function — no I/O, no side effects.
-    Missing domain_context keys are silently replaced with empty string.
+
+def build_generation_request(persona: dict, company: dict) -> tuple[str, str]:
     """
-    kb_block = (
-        "\n".join(
-            f"{i + 1}. {f.get('description', '')}" for i, f in enumerate(kb_findings)
-        )
-        if kb_findings
-        else "No prior findings. Explore broadly."
-    )
+    Build the (system_message, user_message) pair to send to Gemma4.
 
-    return MASTER_PROMPT_TEMPLATE.format(
-        persona_markdown=profile.raw_markdown,
-        product_name=domain_context.get("product_name", ""),
-        user_type=domain_context.get("user_type", ""),
-        domain_vocabulary=domain_context.get("domain_vocabulary", ""),
-        application_domain=domain_context.get("application_domain", ""),
-        kb_findings_block=kb_block,
-        role_anchor=profile.role_anchor,
+    Gemma4's response is the final agent system prompt — save that output,
+    not the strings returned here.
+
+    Args:
+        persona: dict with keys:
+            name, brief_identity, identity_block, tone,
+            interaction_rules, failure_patterns, role_anchor
+        company: dict with keys:
+            bot_name, company_name, industry,
+            capabilities_summary, test_scenarios
+
+    Returns:
+        (system_msg, user_msg) — pass directly as the system and user
+        messages in the Gemma4 /api/chat request.
+    """
+    user_msg = _USER_TEMPLATE.format(
+        persona_name=persona["name"],
+        persona_brief_identity=persona["brief_identity"],
+        persona_identity_block=persona["identity_block"].strip(),
+        persona_tone=persona["tone"],
+        persona_interaction_rules=persona["interaction_rules"].strip(),
+        persona_failure_patterns=persona["failure_patterns"].strip(),
+        persona_role_anchor=persona["role_anchor"].strip(),
+        company_bot_name=company["bot_name"],
+        company_name=company["company_name"],
+        company_industry=company["industry"],
+        company_capabilities_summary=company["capabilities_summary"].strip(),
+        company_test_scenarios=company["test_scenarios"].strip(),
     )
+    return _SYSTEM, user_msg
