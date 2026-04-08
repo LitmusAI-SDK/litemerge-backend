@@ -116,7 +116,9 @@ def parse_persona(path: Path) -> dict:
     summary = _extract_section(md, "summary")
     tone_raw = _extract_section(md, "tone")
 
-    brief_identity = _first_sentence(summary) if summary else _first_sentence(identity_block)
+    brief_identity = (
+        _first_sentence(summary) if summary else _first_sentence(identity_block)
+    )
     brief_identity = re.sub(r"\*\*", "", brief_identity)
 
     full_identity = "\n\n".join(filter(None, [identity_block, behavioural]))
@@ -200,12 +202,12 @@ def _init_excel() -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
     ws.row_dimensions[1].height = 20
-    ws.column_dimensions["A"].width = 5    # #
-    ws.column_dimensions["B"].width = 16   # Persona
-    ws.column_dimensions["C"].width = 18   # Company
-    ws.column_dimensions["D"].width = 12   # Elapsed
+    ws.column_dimensions["A"].width = 5  # #
+    ws.column_dimensions["B"].width = 16  # Persona
+    ws.column_dimensions["C"].width = 18  # Company
+    ws.column_dimensions["D"].width = 12  # Elapsed
     ws.column_dimensions["E"].width = 120  # Generated System Prompt
-    ws.column_dimensions["F"].width = 40   # Error
+    ws.column_dimensions["F"].width = 40  # Error
 
     wb.save(RESULTS_FILE)
 
@@ -252,7 +254,9 @@ def run_all() -> None:
     company_dicts = [parse_company(c) for c in companies]
 
     total = len(persona_dicts) * len(company_dicts)
-    print(f"Generating prompts: {len(persona_dicts)} personas × {len(company_dicts)} companies = {total} combinations\n")
+    print(
+        f"Generating prompts: {len(persona_dicts)} personas × {len(company_dicts)} companies = {total} combinations\n"
+    )
 
     _init_excel()
     count = 0
@@ -260,7 +264,9 @@ def run_all() -> None:
     for persona in persona_dicts:
         for company in company_dicts:
             count += 1
-            label = f"[{count:02d}/{total}] {persona['name']} × {company['company_name']}"
+            label = (
+                f"[{count:02d}/{total}] {persona['name']} × {company['company_name']}"
+            )
             print(f"{label} ... ", end="", flush=True)
 
             try:
@@ -291,7 +297,7 @@ def run_all() -> None:
 
             _append_row(result, count)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Done. {count} prompts generated and saved to {RESULTS_FILE.name}")
 
 

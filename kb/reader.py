@@ -51,10 +51,7 @@ class KBReader:
             query = {"project_id": project_id}
 
         cursor = (
-            db["findings"]
-            .find(query, {"_id": 0})
-            .sort("created_at", -1)
-            .limit(limit)
+            db["findings"].find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
         )
 
         findings: list[dict] = []

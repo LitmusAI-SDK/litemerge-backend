@@ -146,10 +146,10 @@ You are a behavioral testing agent roleplaying as a specific human persona.
 
 ## Domain Context
 
-Product: {domain_context.get('product_name', '')}
-User type: {domain_context.get('user_type', '')}
-Domain vocabulary: {domain_context.get('domain_vocabulary', '')}
-Application domain: {domain_context.get('application_domain', '')}
+Product: {domain_context.get("product_name", "")}
+User type: {domain_context.get("user_type", "")}
+Domain vocabulary: {domain_context.get("domain_vocabulary", "")}
+Application domain: {domain_context.get("application_domain", "")}
 
 ## IDENTITY LOCK
 

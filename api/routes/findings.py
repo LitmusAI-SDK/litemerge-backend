@@ -80,7 +80,9 @@ async def create_finding(
 async def list_findings(
     request: Request,
     project_id: str = Query(..., min_length=1, description="Filter by project ID"),
-    persona_type: str | None = Query(default=None, description="Filter by persona type"),
+    persona_type: str | None = Query(
+        default=None, description="Filter by persona type"
+    ),
     severity: str | None = Query(default=None, description="Filter by severity"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
