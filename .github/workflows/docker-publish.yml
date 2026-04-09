@@ -60,7 +60,18 @@ jobs:
             WORKER_TAG="backend-worker_${BUILD_NUMBER}"
           fi
 
-          REPOSITORY="${DOCKERHUB_REPOSITORY:-litemerge}"
+          if [[ -n "${DOCKERHUB_REPOSITORY}" ]]; then
+            if [[ "${DOCKERHUB_REPOSITORY}" == */* ]]; then
+              REPOSITORY="${DOCKERHUB_REPOSITORY}"
+            else
+              REPOSITORY="${DOCKERHUB_USERNAME}/${DOCKERHUB_REPOSITORY}"
+            fi
+          else
+            REPOSITORY="${DOCKERHUB_USERNAME}/lit-emerge"
+          fi
+
+          # Docker Hub repository names are lowercase.
+          REPOSITORY="${REPOSITORY,,}"
 
           echo "repository=${REPOSITORY}" >> "${GITHUB_OUTPUT}"
           echo "api_tag=${API_TAG}" >> "${GITHUB_OUTPUT}"
@@ -89,5 +100,5 @@ jobs:
       - name: Build summary
         shell: bash
         run: |
-          echo "Pushed ${DOCKERHUB_REPOSITORY:-litemerge}:${{ steps.tags.outputs.api_tag }}"
-          echo "Pushed ${DOCKERHUB_REPOSITORY:-litemerge}:${{ steps.tags.outputs.worker_tag }}"
+          echo "Pushed ${{ steps.tags.outputs.repository }}:${{ steps.tags.outputs.api_tag }}"
+          echo "Pushed ${{ steps.tags.outputs.repository }}:${{ steps.tags.outputs.worker_tag }}"
