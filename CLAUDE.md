@@ -21,21 +21,21 @@
 
 ### Completed: Phase 1A
 - FastAPI shell and route structure under `/v1`.
-- Health endpoint, runs create/status endpoints, API key middleware (`x-api-key`).
+- Health endpoint, runs create/status endpoints, Bearer token middleware (`Authorization: Bearer <token>`).
 - Celery worker scaffold, Docker compose stack (`api`, `worker`, `mongo`, `redis`).
 
 ### Completed: Phase 1B
 - Mongo migration runner bootstrapped at app startup.
 - Singleton settings document (`settings` collection, `_id: litmusai_settings`).
 - Project CRUD: `POST /v1/projects`, `GET /v1/projects`, `PATCH /v1/projects/{id}`.
-- Auth config model: `bearer`, `apikey`, `basic`, `none`. Secrets encrypted in Mongo.
+- Auth config model: `bearer`, `basic`, `none`. Secrets encrypted in Mongo.
 - API key project scoping on project listing and run authorization.
 
 ### Completed: Phase 2A
 - `caller/agent_caller.py` — single canonical module containing:
   - `AgentCaller` + `CallerResult` (HTTP layer, used by preflight)
   - `SimulationAgentCaller` + `AgentResponse` + `AgentRetriableError` (simulation layer, wraps AgentCaller)
-- Auth applied per type; field names mapped via `schema_hints`; `X-LitmusAI-Session` header always sent.
+- Auth applied per type (`bearer`, `basic`, `none`); field names mapped via `schema_hints`; `X-LitmusAI-Session` header always sent.
 - 30s default timeout; all errors surface via result fields, never raised.
 - `USE_MOCK_AGENT=true` env var enables mock failure injection (80% 200, 10% 429, 10% 503).
 
@@ -88,7 +88,7 @@
 
 ## Environment Variables (Backend)
 - `MONGODB_URL`, `MONGODB_DB`, `REDIS_URL`
-- `PUBLIC_API_BASE_URL`, `API_KEY_HEADER`, `BOOTSTRAP_API_KEY`, `SECRETS_ENCRYPTION_KEY`, `AUTH_EXEMPT_PATHS`
+- `PUBLIC_API_BASE_URL`, `BOOTSTRAP_API_KEY`, `SECRETS_ENCRYPTION_KEY`, `AUTH_EXEMPT_PATHS`
 - `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
 - `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODEL`
 - `USE_MOCK_AGENT` — set `true` to bypass real HTTP calls in simulation (dev/test only)

@@ -6,10 +6,9 @@ from core.security import hash_api_key
 
 
 class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, exempt_paths: list[str], api_key_header: str) -> None:
+    def __init__(self, app, exempt_paths: list[str]) -> None:
         super().__init__(app)
         self.exempt_paths = {path.rstrip("/") or "/" for path in exempt_paths}
-        self.api_key_header = api_key_header
 
     def _is_exempt(self, path: str) -> bool:
         normalized_path = path.rstrip("/") or "/"
@@ -18,6 +17,15 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
         if normalized_path.startswith("/docs") or normalized_path.startswith("/redoc"):
             return True
         return False
+
+    def _extract_bearer_token(self, request: Request) -> str | None:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return None
+        parts = auth_header.split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return None
+        return parts[1]
 
     async def dispatch(self, request: Request, call_next):
         if request.method == "OPTIONS" or self._is_exempt(request.url.path):
@@ -31,14 +39,16 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        api_key = request.headers.get(self.api_key_header)
-        if not api_key:
+        token = self._extract_bearer_token(request)
+        if not token:
             return JSONResponse(
                 status_code=401,
-                content={"detail": f"Missing {self.api_key_header} header"},
+                content={
+                    "detail": "Missing or invalid Authorization header. Expected: Bearer <token>"
+                },
             )
 
-        key_hash = hash_api_key(api_key)
+        key_hash = hash_api_key(token)
         api_key_record = await request.app.state.db["api_keys"].find_one(
             {"key_hash": key_hash, "is_active": True}
         )

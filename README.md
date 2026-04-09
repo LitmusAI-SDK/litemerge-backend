@@ -14,7 +14,7 @@ Phase 1A + 1B backend scaffold for LitmusAI, adapted to MongoDB.
 - Singleton `settings` document to track DB schema version metadata
 - Project CRUD (`POST /v1/projects`, `GET /v1/projects`, `PATCH /v1/projects/{id}`)
 - Encrypted storage for project auth config secrets (`auth_config.value`)
-- API key middleware (`x-api-key`) checked against Mongo `api_keys`
+- Bearer token middleware (`Authorization: Bearer <token>`) checked against Mongo `api_keys`
 - Celery + Redis worker scaffold
 - Docker Compose stack for local development
 
@@ -35,7 +35,7 @@ Default key in compose: `lmai_dev_key`
 Use it in requests:
 
 ```http
-x-api-key: lmai_dev_key
+Authorization: Bearer lmai_dev_key
 ```
 
 Auth config encryption uses:
@@ -49,7 +49,7 @@ SECRETS_ENCRYPTION_KEY=replace-with-a-long-random-secret
 ```bash
 curl -X POST http://localhost:8000/v1/runs \
 	-H "Content-Type: application/json" \
-	-H "x-api-key: lmai_dev_key" \
+	-H "Authorization: Bearer lmai_dev_key" \
 	-d '{
 		"project_id": "proj_abc123",
 		"test_suite": "standard",

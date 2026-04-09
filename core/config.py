@@ -15,7 +15,6 @@ class Settings(BaseSettings):
 
     public_api_base_url: str = "http://localhost:8000"
 
-    api_key_header: str = "x-api-key"
     bootstrap_api_key: str = "lmai_dev_key"
     auth_exempt_paths: list[str] = Field(
         default_factory=lambda: ["/v1/health", "/docs", "/openapi.json", "/redoc"]

@@ -86,9 +86,6 @@ class AgentCaller:
 
         if auth_type == "bearer":
             headers["Authorization"] = f"Bearer {secret}"
-        elif auth_type == "apikey":
-            header_name = self._auth_config.get("header_name") or "X-Api-Key"
-            headers[header_name] = secret
         elif auth_type == "basic":
             encoded = base64.b64encode(secret.encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"

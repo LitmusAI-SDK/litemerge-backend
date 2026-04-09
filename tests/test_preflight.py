@@ -103,7 +103,7 @@ def test_preflight_green(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert response.status_code == 200
@@ -122,7 +122,7 @@ def test_preflight_amber_slow_response(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert response.status_code == 200
@@ -141,7 +141,7 @@ def test_preflight_amber_boundary_exactly_2000ms(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert response.json()["status"] == "amber"
@@ -161,7 +161,7 @@ def test_preflight_red_timeout(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert response.status_code == 200
@@ -184,7 +184,7 @@ def test_preflight_red_non_200(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     data = response.json()
@@ -206,7 +206,7 @@ def test_preflight_red_bad_reply_field(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     data = response.json()
@@ -228,7 +228,7 @@ def test_preflight_passes_project_doc_to_agent_caller(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     project_doc_arg = MockCaller.call_args[0][0]
@@ -245,7 +245,7 @@ def test_preflight_probe_uses_preflight_session_id(client_and_db) -> None:
         MockCaller.return_value.send = AsyncMock(return_value=result)
         client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     _, send_kwargs = MockCaller.return_value.send.call_args
@@ -265,7 +265,7 @@ def test_preflight_404_when_project_not_found() -> None:
         app.state.db_ready = True
         response = client.post(
             "/v1/projects/nonexistent/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
     assert response.status_code == 404
 
@@ -282,7 +282,7 @@ def test_preflight_403_when_api_key_not_scoped_to_project() -> None:
         app.state.db_ready = True
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
     assert response.status_code == 403
 
