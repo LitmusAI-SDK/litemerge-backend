@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     #   anthropic → "anthropic/claude-haiku-4-5-20251001"
     #   openai    → "openai/gpt-4o-mini"
     #   lmstudio  → uses lmstudio_base_url + lmstudio_model instead of llm_model
-    llm_provider: str = "anthropic"
-    llm_model: str = "anthropic/claude-haiku-4-5-20251001"
+    llm_provider: str = "openai"
+    llm_model: str = "openai/gpt-4o-mini"
 
     # ── Provider API keys ─────────────────────────────────────────────────────
     gemini_api_key: str = ""
