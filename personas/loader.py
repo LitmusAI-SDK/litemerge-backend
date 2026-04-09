@@ -102,7 +102,12 @@ class PersonaLoader:
             if line.startswith("## "):
                 if current_heading is not None:
                     sections[current_heading] = "\n".join(current_lines).strip()
-                current_heading = line[3:].strip()
+                heading = line[3:].strip()
+                # Strip parenthetical suffixes e.g. "Failure Patterns (Fuzzing Targets)"
+                paren_idx = heading.find(" (")
+                current_heading = (
+                    heading[:paren_idx].strip() if paren_idx != -1 else heading
+                )
                 current_lines = []
             elif current_heading is not None:
                 current_lines.append(line)
