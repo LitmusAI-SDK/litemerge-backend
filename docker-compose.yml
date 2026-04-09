@@ -23,6 +23,8 @@ services:
     build:
       context: .
     command: celery -A worker.celery_app.celery_app worker --loglevel=info
+    env_file:
+      - .env
     environment:
       APP_ENV: development
       MONGODB_URL: mongodb://mongo:27017
