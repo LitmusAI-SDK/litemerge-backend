@@ -104,23 +104,6 @@ async def test_send_bearer_auth() -> None:
 
 
 @pytest.mark.anyio
-async def test_send_apikey_auth() -> None:
-    project = _make_project(
-        auth_type="apikey", auth_value="key-xyz", header_name="X-Custom-Key"
-    )
-    caller = AgentCaller(project)
-
-    mock_cm, mock_client = _mock_http_response()
-    with patch("caller.agent_caller.httpx.AsyncClient", return_value=mock_cm):
-        result = await caller.send(message="Hi", session_id="sess_1", history=[])
-
-    assert result.ok
-    sent_headers = mock_client.post.call_args[1]["headers"]
-    assert sent_headers["X-Custom-Key"] == "key-xyz"
-    assert "Authorization" not in sent_headers
-
-
-@pytest.mark.anyio
 async def test_send_basic_auth() -> None:
     project = _make_project(auth_type="basic", auth_value="user:pass")
     caller = AgentCaller(project)

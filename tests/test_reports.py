@@ -111,7 +111,7 @@ def test_get_report_returns_200_for_complete_run():
         _setup_db(app, run_doc, findings)
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert resp.status_code == 200
@@ -122,7 +122,7 @@ def test_get_report_returns_404_when_run_not_found():
         _setup_db(app, None, [])
         resp = client.get(
             "/v1/reports/no_such_run",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     assert resp.status_code == 404
@@ -135,7 +135,7 @@ def test_get_report_score_and_passed_fields():
         _setup_db(app, run_doc, [])
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -151,7 +151,7 @@ def test_get_report_passed_false_when_below_threshold():
         _setup_db(app, run_doc, [])
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -165,7 +165,7 @@ def test_get_report_passed_none_when_score_is_none():
         _setup_db(app, run_doc, [])
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -184,7 +184,7 @@ def test_get_report_findings_count():
         _setup_db(app, run_doc, findings)
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -204,7 +204,7 @@ def test_get_report_findings_by_severity_aggregation():
         _setup_db(app, run_doc, findings)
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -227,7 +227,7 @@ def test_get_report_findings_by_type_aggregation():
         _setup_db(app, run_doc, findings)
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -248,7 +248,7 @@ def test_get_report_includes_run_metadata():
         _setup_db(app, run_doc, [])
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -270,7 +270,7 @@ def test_get_report_findings_sorted_critical_first():
         _setup_db(app, run_doc, findings)
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()
@@ -286,7 +286,7 @@ def test_get_report_no_findings_returns_zeros():
         _setup_db(app, run_doc, [])
         resp = client.get(
             "/v1/reports/run_abc",
-            headers={"x-api-key": BOOTSTRAP_KEY},
+            headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
     body = resp.json()

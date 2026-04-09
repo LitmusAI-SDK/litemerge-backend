@@ -52,7 +52,6 @@ app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     ApiKeyAuthMiddleware,
     exempt_paths=settings.auth_exempt_paths,
-    api_key_header=settings.api_key_header,
 )
 
 app.include_router(health, prefix="/v1")
