@@ -38,6 +38,10 @@ Use it in requests:
 Authorization: Bearer lmai_dev_key
 ```
 
+In Swagger UI (`/docs`), click **Authorize**, select `BearerAuth`, and paste only
+the token value (for example `lmai_dev_key`). Swagger will add the `Bearer`
+prefix automatically.
+
 Auth config encryption uses:
 
 ```bash

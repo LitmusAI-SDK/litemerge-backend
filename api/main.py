@@ -2,9 +2,10 @@ from contextlib import asynccontextmanager
 import logging
 
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.dependencies import require_bearer_for_docs
 from api.middleware import ApiKeyAuthMiddleware
 from api.routes import findings, health, projects, reports, runs
 from core.config import settings
@@ -64,7 +65,23 @@ app.add_middleware(
 )
 
 app.include_router(health, prefix="/v1")
-app.include_router(runs, prefix="/v1")
-app.include_router(projects, prefix="/v1")
-app.include_router(reports, prefix="/v1")
-app.include_router(findings, prefix="/v1")
+app.include_router(
+    runs,
+    prefix="/v1",
+    dependencies=[Depends(require_bearer_for_docs)],
+)
+app.include_router(
+    projects,
+    prefix="/v1",
+    dependencies=[Depends(require_bearer_for_docs)],
+)
+app.include_router(
+    reports,
+    prefix="/v1",
+    dependencies=[Depends(require_bearer_for_docs)],
+)
+app.include_router(
+    findings,
+    prefix="/v1",
+    dependencies=[Depends(require_bearer_for_docs)],
+)
