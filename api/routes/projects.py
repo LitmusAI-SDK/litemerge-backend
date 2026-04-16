@@ -14,7 +14,7 @@ from api.schemas.projects import (
     ProjectPatchRequest,
     ProjectResponse,
 )
-from caller.agent_caller import AgentCaller
+from caller.agent_caller import create_agent_caller
 from core.crypto import encrypt_secret
 from core.security import generate_project_id
 
@@ -167,7 +167,7 @@ async def preflight_project(project_id: str, request: Request) -> PreflightRespo
             status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
         )
 
-    caller = AgentCaller(project_doc)
+    caller = create_agent_caller(project_doc)
     result = await caller.send(
         message=_PREFLIGHT_PROBE,
         session_id=f"litmusai-preflight-{project_id}",
