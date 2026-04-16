@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from api.schemas.runs import (
     RunCreateRequest,
     RunCreateResponse,
+    RunListItem,
     RunStatusResponse,
     SessionStatus,
 )
@@ -29,6 +30,64 @@ ESTIMATED_DURATION_BY_SUITE = {
 
 # SSE keepalive interval in seconds — prevents proxy/browser timeout on idle runs
 _SSE_KEEPALIVE_S = 15
+
+
+@router.get("", response_model=list[RunListItem])
+async def list_runs(
+    request: Request, project_id: str | None = None
+) -> list[RunListItem]:
+    """List runs, optionally filtered by project_id.
+
+    Returns runs in descending creation order (newest first).
+    Scoped to projects the API key is authorized for when the key has
+    explicit project restrictions.
+    """
+    api_key_record = getattr(request.state, "api_key_record", {})
+    allowed_projects = api_key_record.get("project_ids", [])
+
+    query: dict = {}
+    if project_id:
+        if allowed_projects and project_id not in allowed_projects:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="API key is not authorized for this project",
+            )
+        query["project_id"] = project_id
+    elif allowed_projects:
+        query["project_id"] = {"$in": allowed_projects}
+
+    cursor = request.app.state.db["runs"].find(query).sort("created_at", -1).limit(200)
+    docs = await cursor.to_list(length=200)
+
+    items: list[RunListItem] = []
+    for doc in docs:
+        score = doc.get("score")
+        fail_threshold = doc.get("fail_threshold", 70)
+        passed: bool | None = None
+        if score is not None:
+            passed = score >= fail_threshold
+
+        created_at = doc.get("created_at")
+        completed_at = doc.get("completed_at")
+
+        items.append(
+            RunListItem(
+                run_id=doc["run_id"],
+                project_id=doc.get("project_id", ""),
+                test_suite=doc.get("test_suite", "standard"),
+                status=doc["status"],
+                score=score,
+                passed=passed,
+                fail_threshold=fail_threshold,
+                created_at=created_at.isoformat()
+                if hasattr(created_at, "isoformat")
+                else str(created_at),
+                completed_at=completed_at.isoformat()
+                if completed_at and hasattr(completed_at, "isoformat")
+                else (str(completed_at) if completed_at else None),
+            )
+        )
+    return items
 
 
 @router.post("", response_model=RunCreateResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -121,6 +180,74 @@ async def get_run_status(run_id: str, request: Request) -> RunStatusResponse:
         summary=run_doc.get("summary"),
         session_statuses=session_statuses,
     )
+
+
+@router.get("/{run_id}/sessions")
+async def get_run_sessions(run_id: str, request: Request) -> list[dict]:
+    """Return full conversation logs for every persona session in a run.
+
+    Each element represents one persona session and includes:
+    - persona_id, persona_name, persona_type, status, turns_completed
+    - turns: list of {role, content, turn_index} message pairs
+    """
+    run_doc = await request.app.state.db["runs"].find_one(
+        {"run_id": run_id}, {"_id": 0, "run_id": 1, "project_id": 1}
+    )
+    if not run_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
+        )
+
+    api_key_record = getattr(request.state, "api_key_record", {})
+    allowed_projects = api_key_record.get("project_ids", [])
+    if allowed_projects and run_doc.get("project_id") not in allowed_projects:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+        )
+
+    cursor = request.app.state.db["chat_logs"].find(
+        {"run_id": run_id},
+        {
+            "_id": 0,
+            "persona_id": 1,
+            "persona_name": 1,
+            "persona_type": 1,
+            "status": 1,
+            "turns": 1,
+        },
+    )
+    sessions: list[dict] = []
+    async for doc in cursor:
+        raw_status = doc.get("status", "in_progress")
+        if raw_status not in ("in_progress", "completed", "failed"):
+            raw_status = "in_progress"
+
+        turns = []
+        for i, turn in enumerate(doc.get("turns", [])):
+            turns.append(
+                {
+                    "turn_index": i,
+                    "persona_message": turn.get("persona_message")
+                    or turn.get("user")
+                    or "",
+                    "agent_response": turn.get("agent_response")
+                    or turn.get("assistant")
+                    or "",
+                }
+            )
+
+        sessions.append(
+            {
+                "persona_id": doc.get("persona_id", ""),
+                "persona_name": doc.get("persona_name"),
+                "persona_type": doc.get("persona_type"),
+                "status": raw_status,
+                "turns_completed": len(turns),
+                "turns": turns,
+            }
+        )
+
+    return sessions
 
 
 @router.get("/{run_id}/stream")

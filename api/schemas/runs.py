@@ -33,3 +33,15 @@ class RunStatusResponse(BaseModel):
     report_url: str | None = None
     summary: dict | None = None
     session_statuses: list[SessionStatus] = []
+
+
+class RunListItem(BaseModel):
+    run_id: str
+    project_id: str
+    test_suite: Literal["standard", "adversarial", "full"]
+    status: Literal["queued", "running", "evaluating", "complete", "failed"]
+    score: int | None = None
+    passed: bool | None = None
+    fail_threshold: int
+    created_at: str
+    completed_at: str | None = None
