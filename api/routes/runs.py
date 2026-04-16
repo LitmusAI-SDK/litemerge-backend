@@ -191,11 +191,18 @@ async def get_run_sessions(run_id: str, request: Request) -> list[dict]:
     - turns: list of {role, content, turn_index} message pairs
     """
     run_doc = await request.app.state.db["runs"].find_one(
-        {"run_id": run_id}, {"_id": 0, "run_id": 1}
+        {"run_id": run_id}, {"_id": 0, "run_id": 1, "project_id": 1}
     )
     if not run_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
+        )
+
+    api_key_record = getattr(request.state, "api_key_record", {})
+    allowed_projects = api_key_record.get("project_ids", [])
+    if allowed_projects and run_doc.get("project_id") not in allowed_projects:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
         )
 
     cursor = request.app.state.db["chat_logs"].find(
