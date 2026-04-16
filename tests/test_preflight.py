@@ -99,8 +99,8 @@ def test_preflight_green(client_and_db) -> None:
     client, _ = client_and_db
     result = _caller_result(latency_ms=450.0)
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -118,8 +118,8 @@ def test_preflight_amber_slow_response(client_and_db) -> None:
     client, _ = client_and_db
     result = _caller_result(latency_ms=2500.0)
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -137,8 +137,8 @@ def test_preflight_amber_boundary_exactly_2000ms(client_and_db) -> None:
     client, _ = client_and_db
     result = _caller_result(latency_ms=2000.0)
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -157,8 +157,8 @@ def test_preflight_red_timeout(client_and_db) -> None:
         error="Request timed out after 30.0s",
     )
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -180,8 +180,8 @@ def test_preflight_red_non_200(client_and_db) -> None:
         error="Agent returned HTTP 503",
     )
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -202,8 +202,8 @@ def test_preflight_red_bad_reply_field(client_and_db) -> None:
         error="Response missing expected reply field 'reply'",
     )
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         response = client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
@@ -220,18 +220,18 @@ def test_preflight_red_bad_reply_field(client_and_db) -> None:
 
 
 def test_preflight_passes_project_doc_to_agent_caller(client_and_db) -> None:
-    """AgentCaller must be instantiated with the full project doc from DB."""
+    """create_agent_caller must be called with the full project doc from DB."""
     client, _ = client_and_db
     result = _caller_result()
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
-    project_doc_arg = MockCaller.call_args[0][0]
+    project_doc_arg = mock_factory.call_args[0][0]
     assert project_doc_arg["_id"] == TEST_PROJECT_ID
     assert project_doc_arg["agent_endpoint"] == "https://agent.example.com/chat"
 
@@ -241,14 +241,14 @@ def test_preflight_probe_uses_preflight_session_id(client_and_db) -> None:
     client, _ = client_and_db
     result = _caller_result()
 
-    with patch("api.routes.projects.AgentCaller") as MockCaller:
-        MockCaller.return_value.send = AsyncMock(return_value=result)
+    with patch("api.routes.projects.create_agent_caller") as mock_factory:
+        mock_factory.return_value.send = AsyncMock(return_value=result)
         client.post(
             f"/v1/projects/{TEST_PROJECT_ID}/preflight",
             headers={"Authorization": f"Bearer {BOOTSTRAP_KEY}"},
         )
 
-    _, send_kwargs = MockCaller.return_value.send.call_args
+    _, send_kwargs = mock_factory.return_value.send.call_args
     assert "preflight" in send_kwargs["session_id"]
     assert send_kwargs["history"] == []
 
