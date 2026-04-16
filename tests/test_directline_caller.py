@@ -123,6 +123,20 @@ async def test_create_conversation_stores_state() -> None:
 
 
 @pytest.mark.anyio
+async def test_create_conversation_missing_secret_raises_value_error() -> None:
+    """_get_secret raises ValueError when value_encrypted is absent; propagates from _create_conversation."""
+    project = {
+        "agent_endpoint": "https://directline.botframework.com",
+        "auth_config": {"type": "bearer"},  # no value_encrypted
+        "schema_hints": {"caller_type": "directline"},
+    }
+    caller = DirectLineAgentCaller(project)
+
+    with pytest.raises(ValueError, match="missing value_encrypted"):
+        await caller._create_conversation()
+
+
+@pytest.mark.anyio
 async def test_create_conversation_non_200_raises() -> None:
     """Non-200 from POST /conversations raises _DirectLineError."""
     caller = DirectLineAgentCaller(_make_directline_project())
@@ -399,6 +413,98 @@ async def test_send_poll_timeout_returns_error() -> None:
     assert result.reply is None
     assert result.error is not None
     assert "timeout" in result.error.lower() or "did not reply" in result.error.lower()
+
+
+@pytest.mark.anyio
+async def test_send_value_error_from_get_secret_returns_caller_result() -> None:
+    """Missing value_encrypted surfaces as CallerResult.error (not a raised exception)."""
+    project = {
+        "agent_endpoint": "https://directline.botframework.com",
+        "auth_config": {"type": "bearer"},  # no value_encrypted
+        "schema_hints": {"caller_type": "directline"},
+    }
+    caller = DirectLineAgentCaller(project)
+
+    result = await caller.send("Hello", "sess_p1", [])
+
+    assert not result.ok
+    assert result.reply is None
+    assert result.status_code == 0
+    assert "missing value_encrypted" in result.error.lower()
+
+
+@pytest.mark.anyio
+async def test_send_refreshes_token_on_401_from_post_activity() -> None:
+    """401 from _post_activity triggers one-shot conversation refresh and retry."""
+    caller = DirectLineAgentCaller(_make_directline_project())
+    caller._conversation_id = "conv-old"
+    caller._token = "tok-expired"
+
+    refresh_called = []
+    post_calls = []
+
+    async def fake_refresh():
+        refresh_called.append(True)
+        caller._conversation_id = "conv-new"
+        caller._token = "tok-fresh"
+
+    async def fail_then_succeed(msg, sid):
+        post_calls.append(sid)
+        if len(post_calls) == 1:
+            raise _DirectLineError("Unauthorized", status_code=401, raw_body="")
+
+    with (
+        patch.object(caller, "_create_conversation", fake_refresh),
+        patch.object(caller, "_post_activity", fail_then_succeed),
+        patch.object(caller, "_poll_for_reply", AsyncMock(return_value=("Fresh reply", ""))),
+    ):
+        result = await caller.send("Hello", "sess_p1", [])
+
+    assert result.ok
+    assert result.reply == "Fresh reply"
+    assert len(refresh_called) == 1
+    assert len(post_calls) == 2  # first (expired), then retry (fresh)
+
+
+@pytest.mark.anyio
+async def test_send_returns_error_when_refresh_also_fails() -> None:
+    """If the one-shot token refresh also fails, CallerResult.error is returned."""
+    caller = DirectLineAgentCaller(_make_directline_project())
+    caller._conversation_id = "conv-old"
+    caller._token = "tok-expired"
+
+    async def fail_post(msg, sid):
+        raise _DirectLineError("Unauthorized", status_code=401, raw_body="")
+
+    async def fail_refresh():
+        raise _DirectLineError("Service unavailable", status_code=503, raw_body="")
+
+    with (
+        patch.object(caller, "_create_conversation", fail_refresh),
+        patch.object(caller, "_post_activity", fail_post),
+    ):
+        result = await caller.send("Hello", "sess_p1", [])
+
+    assert not result.ok
+    assert result.status_code == 503
+
+
+@pytest.mark.anyio
+async def test_poll_401_clears_state_and_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """401 during polling resets _conversation_id/_token so next send() re-authenticates."""
+    monkeypatch.setattr(DirectLineAgentCaller, "MAX_POLL_ATTEMPTS", 3)
+
+    caller = DirectLineAgentCaller(_make_directline_project())
+    caller._conversation_id = "conv-abc"
+    caller._token = "tok-expired"
+
+    cm, _ = _make_http_cm("get", 401, {"error": "Unauthorized"})
+    with patch("caller.agent_caller.httpx.AsyncClient", return_value=cm):
+        reply, _ = await caller._poll_for_reply()
+
+    assert reply is None
+    assert caller._conversation_id is None
+    assert caller._token is None
 
 
 # ---------------------------------------------------------------------------

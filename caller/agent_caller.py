@@ -344,9 +344,7 @@ class DirectLineAgentCaller:
         headers = {"Authorization": f"Bearer {self._token}"}
         last_raw_body = ""
 
-        for _ in range(self.MAX_POLL_ATTEMPTS):
-            await asyncio.sleep(self.POLL_INTERVAL_S)
-
+        for attempt in range(self.MAX_POLL_ATTEMPTS):
             params: dict[str, str] = {}
             if self._watermark is not None:
                 params["watermark"] = self._watermark
@@ -356,13 +354,24 @@ class DirectLineAgentCaller:
 
             last_raw_body = response.text
 
+            if response.status_code in (401, 403):
+                # Auth token expired mid-poll; clear state so next send() call
+                # re-creates the conversation with a fresh token.
+                self._conversation_id = None
+                self._token = None
+                break
+
             if response.status_code != 200:
-                # Treat a failed poll as a transient error; keep trying.
+                # Other transient error — keep trying.
+                if attempt < self.MAX_POLL_ATTEMPTS - 1:
+                    await asyncio.sleep(self.POLL_INTERVAL_S)
                 continue
 
             try:
                 data = response.json()
             except Exception:
+                if attempt < self.MAX_POLL_ATTEMPTS - 1:
+                    await asyncio.sleep(self.POLL_INTERVAL_S)
                 continue
 
             new_watermark = data.get("watermark")
@@ -379,6 +388,9 @@ class DirectLineAgentCaller:
             if bot_messages:
                 reply = bot_messages[-1].get("text") or ""
                 return reply, last_raw_body
+
+            if attempt < self.MAX_POLL_ATTEMPTS - 1:
+                await asyncio.sleep(self.POLL_INTERVAL_S)
 
         return None, last_raw_body
 
@@ -404,6 +416,15 @@ class DirectLineAgentCaller:
         if self._conversation_id is None:
             try:
                 await self._create_conversation()
+            except ValueError as exc:
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                return CallerResult(
+                    reply=None,
+                    latency_ms=latency_ms,
+                    status_code=0,
+                    raw_body="",
+                    error=str(exc),
+                )
             except _DirectLineError as exc:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return CallerResult(
@@ -423,18 +444,40 @@ class DirectLineAgentCaller:
                     error=f"Error creating DirectLine conversation: {exc}",
                 )
 
-        # Step 2: post the message activity
+        # Step 2: post the message activity (with one-shot token refresh on 401/403)
         try:
             await self._post_activity(message, session_id)
         except _DirectLineError as exc:
-            latency_ms = (time.perf_counter() - t0) * 1000.0
-            return CallerResult(
-                reply=None,
-                latency_ms=latency_ms,
-                status_code=exc.status_code,
-                raw_body=exc.raw_body,
-                error=exc.args[0],
-            )
+            if exc.status_code not in (401, 403):
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                return CallerResult(
+                    reply=None,
+                    latency_ms=latency_ms,
+                    status_code=exc.status_code,
+                    raw_body=exc.raw_body,
+                    error=exc.args[0],
+                )
+            # Token expired — re-create the conversation once and retry
+            try:
+                await self._create_conversation()
+                await self._post_activity(message, session_id)
+            except (ValueError, _DirectLineError, httpx.TimeoutException, httpx.RequestError) as retry_exc:
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                if isinstance(retry_exc, _DirectLineError):
+                    return CallerResult(
+                        reply=None,
+                        latency_ms=latency_ms,
+                        status_code=retry_exc.status_code,
+                        raw_body=retry_exc.raw_body,
+                        error=retry_exc.args[0],
+                    )
+                return CallerResult(
+                    reply=None,
+                    latency_ms=latency_ms,
+                    status_code=0,
+                    raw_body="",
+                    error=f"Token refresh failed: {retry_exc}",
+                )
         except (httpx.TimeoutException, httpx.RequestError) as exc:
             latency_ms = (time.perf_counter() - t0) * 1000.0
             return CallerResult(
@@ -534,11 +577,11 @@ class SimulationAgentCaller:
     def __init__(
         self,
         project_config: dict,
-        timeout_s: int = 30,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
         mock: bool | None = None,
     ) -> None:
         self._caller: AgentCaller | DirectLineAgentCaller = create_agent_caller(
-            project_config, timeout_s=float(timeout_s)
+            project_config, timeout_s=timeout_s
         )
         self._mock = mock if mock is not None else _USE_MOCK_AGENT
 
