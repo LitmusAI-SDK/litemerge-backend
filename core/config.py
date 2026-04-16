@@ -74,11 +74,16 @@ settings = Settings()
 # Apply litellm global config after settings are loaded.
 # Wrapped in try/except so tests that don't install litellm still pass.
 try:
+    import os
+
     import litellm
 
     litellm.openai_key = settings.openai_api_key
     litellm.anthropic_key = settings.anthropic_api_key
     if settings.gemini_api_key:
-        litellm.api_key = settings.gemini_api_key
+        # LiteLLM's gemini/ provider reads GEMINI_API_KEY from the environment.
+        # Setting litellm.api_key is a generic field and is NOT picked up by
+        # the Gemini provider — os.environ is the correct injection point.
+        os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
 except ImportError:
     pass

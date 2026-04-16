@@ -38,6 +38,11 @@ async def agenerate(
         call_kwargs["api_base"] = settings.lmstudio_base_url
         call_kwargs["api_key"] = "lmstudio"
 
+    if settings.llm_provider == "gemini" and settings.gemini_api_key:
+        # Belt-and-suspenders: pass key per-call in addition to the env var set
+        # in core/config.py, in case litellm is initialised before the env is set.
+        call_kwargs["api_key"] = settings.gemini_api_key
+
     if settings.llm_provider == "gemini" and session_meta.get("gemini_cache_name"):
         # Pass the CachedContent resource name so Gemini uses cached tokens
         call_kwargs["cached_content"] = session_meta["gemini_cache_name"]
