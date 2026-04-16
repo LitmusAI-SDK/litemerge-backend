@@ -201,9 +201,7 @@ async def get_run_sessions(run_id: str, request: Request) -> list[dict]:
     api_key_record = getattr(request.state, "api_key_record", {})
     allowed_projects = api_key_record.get("project_ids", [])
     if allowed_projects and run_doc.get("project_id") not in allowed_projects:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     cursor = request.app.state.db["chat_logs"].find(
         {"run_id": run_id},

@@ -381,8 +381,7 @@ class DirectLineAgentCaller:
             bot_messages = [
                 a
                 for a in data.get("activities", [])
-                if a.get("type") == "message"
-                and a.get("from", {}).get("role") == "bot"
+                if a.get("type") == "message" and a.get("from", {}).get("role") == "bot"
             ]
 
             if bot_messages:
@@ -461,7 +460,12 @@ class DirectLineAgentCaller:
             try:
                 await self._create_conversation()
                 await self._post_activity(message, session_id)
-            except (ValueError, _DirectLineError, httpx.TimeoutException, httpx.RequestError) as retry_exc:
+            except (
+                ValueError,
+                _DirectLineError,
+                httpx.TimeoutException,
+                httpx.RequestError,
+            ) as retry_exc:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 if isinstance(retry_exc, _DirectLineError):
                     return CallerResult(

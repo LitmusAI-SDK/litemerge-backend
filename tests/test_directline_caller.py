@@ -227,7 +227,9 @@ async def test_poll_returns_bot_reply_immediately() -> None:
     caller._token = "sess-tok"
     caller._watermark = "0"
 
-    cm, _ = _make_http_cm("get", 200, _activities_body("Hello from bot!", watermark="2"))
+    cm, _ = _make_http_cm(
+        "get", 200, _activities_body("Hello from bot!", watermark="2")
+    )
     with (
         patch("caller.agent_caller.httpx.AsyncClient", return_value=cm),
         patch("caller.agent_caller.asyncio.sleep"),
@@ -240,7 +242,9 @@ async def test_poll_returns_bot_reply_immediately() -> None:
 
 
 @pytest.mark.anyio
-async def test_poll_retries_until_reply_appears(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_poll_retries_until_reply_appears(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """First N polls have no bot activity; reply found on N+1."""
     monkeypatch.setattr(DirectLineAgentCaller, "MAX_POLL_ATTEMPTS", 4)
 
@@ -456,7 +460,9 @@ async def test_send_refreshes_token_on_401_from_post_activity() -> None:
     with (
         patch.object(caller, "_create_conversation", fake_refresh),
         patch.object(caller, "_post_activity", fail_then_succeed),
-        patch.object(caller, "_poll_for_reply", AsyncMock(return_value=("Fresh reply", ""))),
+        patch.object(
+            caller, "_poll_for_reply", AsyncMock(return_value=("Fresh reply", ""))
+        ),
     ):
         result = await caller.send("Hello", "sess_p1", [])
 
@@ -490,7 +496,9 @@ async def test_send_returns_error_when_refresh_also_fails() -> None:
 
 
 @pytest.mark.anyio
-async def test_poll_401_clears_state_and_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_poll_401_clears_state_and_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """401 during polling resets _conversation_id/_token so next send() re-authenticates."""
     monkeypatch.setattr(DirectLineAgentCaller, "MAX_POLL_ATTEMPTS", 3)
 
