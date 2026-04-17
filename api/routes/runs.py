@@ -225,8 +225,7 @@ async def get_run_sessions(run_id: str, request: Request) -> list[dict]:
             turns.append(
                 {
                     "turn_index": i,
-                    "persona_message": turn.get("persona_turn")
-                    or turn.get("persona_message")
+                    "persona_message": turn.get("persona_message")
                     or turn.get("user")
                     or "",
                     "agent_response": turn.get("agent_response")

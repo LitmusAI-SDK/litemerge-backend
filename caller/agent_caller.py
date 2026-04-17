@@ -22,7 +22,6 @@ DirectLine usage::
 
 import asyncio
 import base64
-import logging
 import os
 import random
 import time
@@ -31,8 +30,6 @@ from dataclasses import dataclass, field
 import httpx
 
 from core.crypto import decrypt_secret
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S: float = 30.0
 
@@ -420,7 +417,6 @@ class DirectLineAgentCaller:
                 await self._create_conversation()
             except ValueError as exc:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
-                logger.error("DirectLine create_conversation config error: %s", exc)
                 return CallerResult(
                     reply=None,
                     latency_ms=latency_ms,
@@ -430,7 +426,6 @@ class DirectLineAgentCaller:
                 )
             except _DirectLineError as exc:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
-                logger.error("DirectLine create_conversation HTTP %s: %s — body: %s", exc.status_code, exc.args[0], exc.raw_body[:500])
                 return CallerResult(
                     reply=None,
                     latency_ms=latency_ms,
@@ -440,7 +435,6 @@ class DirectLineAgentCaller:
                 )
             except (httpx.TimeoutException, httpx.RequestError) as exc:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
-                logger.error("DirectLine create_conversation request error: %s", exc)
                 return CallerResult(
                     reply=None,
                     latency_ms=latency_ms,
@@ -503,7 +497,6 @@ class DirectLineAgentCaller:
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
         if reply is None:
-            logger.error("DirectLine bot did not reply within polling timeout — last body: %s", raw_body[:500])
             return CallerResult(
                 reply=None,
                 latency_ms=latency_ms,
