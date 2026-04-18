@@ -12,10 +12,19 @@ Usage::
 
 DirectLine usage::
 
-    # Set schema_hints = {"caller_type": "directline"} on the project.
-    # agent_endpoint should be the DirectLine base URL, e.g.:
-    #   https://directline.botframework.com
-    # auth_config.value should be the long-lived DirectLine channel secret.
+    # Mode A — channel secret (preferred when available):
+    # schema_hints = {"caller_type": "directline"}
+    # agent_endpoint = "https://directline.botframework.com"
+    # auth_config.value = long-lived DirectLine channel secret.
+    #
+    # Mode B — captured conversation (no channel secret available, e.g. Air India):
+    # schema_hints = {
+    #     "caller_type": "directline",
+    #     "directline_conversation_id": "<conversationId captured from browser>",
+    # }
+    # auth_config.value = the per-conversation Bearer token captured from the
+    # widget's Authorization header.  Token will expire (~1h) and cannot be
+    # refreshed without the channel secret — capture a fresh one when it does.
     caller = DirectLineAgentCaller(project_doc)
     result = await caller.send(message="Hello", session_id="sess_abc", history=[])
 """
@@ -239,11 +248,27 @@ class DirectLineAgentCaller:
     ) -> None:
         self._base_url: str = str(project_config["agent_endpoint"]).rstrip("/")
         self._auth_config: dict = project_config.get("auth_config") or {}
+        schema_hints: dict = project_config.get("schema_hints") or {}
         self._timeout_s = timeout_s
         # Session state — populated on first send()
         self._conversation_id: str | None = None
         self._token: str | None = None
         self._watermark: str | None = None
+
+        # Captured-conversation mode: operator supplied a conversationId they
+        # pulled from the browser.  Treat auth_config.value as the per-conversation
+        # Bearer token (NOT a channel secret) and skip _create_conversation.
+        captured_conv_id = schema_hints.get("directline_conversation_id")
+        if captured_conv_id:
+            self._conversation_id = str(captured_conv_id)
+            try:
+                self._token = self._get_secret()
+            except ValueError:
+                # Leave _token as None — send() will surface the error cleanly.
+                self._token = None
+            self._captured_token_mode = True
+        else:
+            self._captured_token_mode = False
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -355,10 +380,13 @@ class DirectLineAgentCaller:
             last_raw_body = response.text
 
             if response.status_code in (401, 403):
-                # Auth token expired mid-poll; clear state so next send() call
-                # re-creates the conversation with a fresh token.
-                self._conversation_id = None
-                self._token = None
+                # Auth token expired mid-poll.  In channel-secret mode, clear
+                # state so next send() recreates the conversation.  In
+                # captured-token mode we cannot refresh — leave state intact
+                # and let the next send() surface the expiry cleanly.
+                if not self._captured_token_mode:
+                    self._conversation_id = None
+                    self._token = None
                 break
 
             if response.status_code != 200:
@@ -411,6 +439,20 @@ class DirectLineAgentCaller:
         """
         t0 = time.perf_counter()
 
+        # Captured-token mode: conversation was pre-populated from schema_hints.
+        # If the token decryption failed in __init__, surface that now.
+        if self._captured_token_mode and self._token is None:
+            return CallerResult(
+                reply=None,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                status_code=0,
+                raw_body="",
+                error=(
+                    "DirectLine captured-token mode requires auth_config.value_encrypted"
+                    " (the Bearer token captured from the widget)."
+                ),
+            )
+
         # Step 1: create conversation on the first turn
         if self._conversation_id is None:
             try:
@@ -447,6 +489,20 @@ class DirectLineAgentCaller:
         try:
             await self._post_activity(message, session_id)
         except _DirectLineError as exc:
+            # In captured-token mode we cannot refresh (no channel secret) —
+            # surface 401/403 directly with a clear hint.
+            if self._captured_token_mode and exc.status_code in (401, 403):
+                latency_ms = (time.perf_counter() - t0) * 1000.0
+                return CallerResult(
+                    reply=None,
+                    latency_ms=latency_ms,
+                    status_code=exc.status_code,
+                    raw_body=exc.raw_body,
+                    error=(
+                        "DirectLine captured token expired or rejected. Capture a"
+                        " fresh Bearer token from the widget and update auth_config."
+                    ),
+                )
             if exc.status_code not in (401, 403):
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return CallerResult(
