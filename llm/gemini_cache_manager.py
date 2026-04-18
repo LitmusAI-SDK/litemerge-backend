@@ -11,11 +11,16 @@ Usage pattern in PersonaSession.run():
     await manager.delete()                        # after session ends or on error
 """
 
+import asyncio
+import random
+
 import httpx
 from core.config import settings
 
 GEMINI_CACHE_API = "https://generativelanguage.googleapis.com/v1beta/cachedContents"
 TTL_SECONDS = 3600  # 1 hour; set to expected max session duration
+
+_RETRY_DELAYS = (5.0, 15.0, 45.0)  # backoff steps on 429
 
 
 class GeminiCacheManager:
@@ -42,16 +47,33 @@ class GeminiCacheManager:
             "ttl": f"{TTL_SECONDS}s",
             "displayName": f"litmusai-{self.session_id}",
         }
-        async with httpx.AsyncClient() as client:
-            r = await client.post(
-                GEMINI_CACHE_API,
-                json=payload,
-                params={"key": settings.gemini_api_key},
-                timeout=15,
-            )
+        # Jitter on first attempt so parallel sessions don't all fire at once
+        await asyncio.sleep(random.uniform(0, 2.0))
+
+        for attempt, delay in enumerate((*_RETRY_DELAYS, None)):
+            async with httpx.AsyncClient() as client:
+                r = await client.post(
+                    GEMINI_CACHE_API,
+                    json=payload,
+                    params={"key": settings.gemini_api_key},
+                    timeout=15,
+                )
+            if r.status_code == 429 and delay is not None:
+                retry_after = r.headers.get("Retry-After")
+                wait = (
+                    float(retry_after)
+                    if retry_after
+                    else delay + random.uniform(0, 3.0)
+                )
+                await asyncio.sleep(wait)
+                continue
             r.raise_for_status()
             self._cache_name = r.json()["name"]
+            return self._cache_name
 
+        # Final attempt after all retries exhausted
+        r.raise_for_status()  # type: ignore[possibly-undefined]
+        self._cache_name = r.json()["name"]
         return self._cache_name
 
     async def delete(self) -> None:
