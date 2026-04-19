@@ -121,6 +121,8 @@ async def create_run(payload: RunCreateRequest, request: Request) -> RunCreateRe
         "notify_webhook": str(payload.notify_webhook)
         if payload.notify_webhook
         else None,
+        "persona_ids": payload.persona_ids,
+        "turns_per_session": payload.turns_per_session,
         "status": "queued",
         "estimated_duration_s": estimated_duration_s,
         "score": None,
@@ -226,6 +228,7 @@ async def get_run_sessions(run_id: str, request: Request) -> list[dict]:
                 {
                     "turn_index": i,
                     "persona_message": turn.get("persona_message")
+                    or turn.get("persona_turn")
                     or turn.get("user")
                     or "",
                     "agent_response": turn.get("agent_response")

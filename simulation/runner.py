@@ -94,12 +94,23 @@ class SimulationRun:
     # Public entry point
     # ------------------------------------------------------------------
 
-    async def execute(self, test_suite: str = "standard") -> dict:
+    async def execute(
+        self,
+        test_suite: str = "standard",
+        persona_ids_override: list[str] | None = None,
+    ) -> dict:
         """Run all persona sessions for the given suite in parallel.
+
+        If `persona_ids_override` is provided (non-empty), it takes precedence
+        over the suite mapping. Useful for ad-hoc runs where the caller picks
+        a specific subset of personas via the launch UI.
 
         Returns a summary dict written to the run document on completion.
         """
-        persona_ids = SUITE_PERSONAS.get(test_suite, SUITE_PERSONAS["standard"])
+        if persona_ids_override:
+            persona_ids = persona_ids_override
+        else:
+            persona_ids = SUITE_PERSONAS.get(test_suite, SUITE_PERSONAS["standard"])
         logger.info(
             "SimulationRun %s starting — suite=%s personas=%s",
             self.run_id,

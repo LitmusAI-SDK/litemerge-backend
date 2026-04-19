@@ -10,10 +10,14 @@ Design notes:
 
 from __future__ import annotations
 
+import logging
+import random
+import re
 import time
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from dataclasses import dataclass, field
 
+import litellm
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from tenacity import (
     RetryError,
@@ -36,13 +40,43 @@ from caller.agent_caller import (
 )
 from simulation.scrubbing import Scrubber
 
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Retry-after extraction for rate-limit errors
+# ---------------------------------------------------------------------------
+
+_RETRY_AFTER_RE = re.compile(r"retry[^.]*?(\d+(?:\.\d+)?)\s*s", re.I)
+_RATE_LIMIT_MAX_WAIT = 120.0
+
+
+def _llm_wait(retry_state) -> float:
+    """Return the wait time for a failed LLM call.
+
+    If the exception is a RateLimitError that advertises a retry delay
+    (e.g. Gemini's "Please retry in 50s"), honour it (+ 2s buffer).
+    Otherwise fall back to the configured random jitter window.
+    """
+    exc = retry_state.outcome.exception()
+    if isinstance(exc, litellm.RateLimitError):
+        m = _RETRY_AFTER_RE.search(str(exc))
+        if m:
+            suggested = float(m.group(1)) + 2.0
+            wait = min(suggested, _RATE_LIMIT_MAX_WAIT)
+            logger.info("Rate-limited — honouring server retry-after of %.1fs", wait)
+            return wait
+        # No explicit delay: fall back to a generous fixed wait
+        return _RATE_LIMIT_MAX_WAIT
+    return random.uniform(settings.retry_min_wait_s, settings.retry_max_wait_s)
+
+
 # ---------------------------------------------------------------------------
 # Standalone retried helpers (module-level — decorated once at import time)
 # ---------------------------------------------------------------------------
 
 
 @retry(
-    wait=wait_random(min=settings.retry_min_wait_s, max=settings.retry_max_wait_s),
+    wait=_llm_wait,
     stop=stop_after_attempt(settings.retry_max_attempts),
     reraise=True,
 )
@@ -129,6 +163,8 @@ class PersonaSession:
             "user_type": self.project_config.get("user_type", ""),
             "domain_vocabulary": self.project_config.get("domain_vocabulary", ""),
             "application_domain": self.project_config.get("domain", ""),
+            "company_context": self.project_config.get("company_context", ""),
+            "max_message_chars": self.project_config.get("max_message_chars"),
         }
 
         # Load profile first to resolve persona_type needed for the KB query.
@@ -170,6 +206,7 @@ class PersonaSession:
                     "turn_index": i,
                     "session_id": self.session_id,
                     "gemini_cache_name": gemini_cache_name,
+                    "max_message_chars": self.project_config.get("max_message_chars"),
                 }
 
                 # LLM persona turn
@@ -177,11 +214,35 @@ class PersonaSession:
                     llm_response = await _retried_llm_call(
                         system_prompt, history, session_meta
                     )
-                except Exception:
+                except Exception as llm_exc:
+                    logger.error(
+                        "Session %s turn %d: LLM call failed — %s",
+                        self.session_id,
+                        i,
+                        llm_exc,
+                    )
                     await _mark_session(self.db, self.session_id, status="failed")
-                    break
+                    raise
 
-                persona_message = scrubber.scrub(llm_response.content)
+                raw_content = scrubber.scrub(llm_response.content or "")
+                persona_message = _sanitize_persona_message(
+                    raw_content,
+                    self.project_config.get("max_message_chars"),
+                )
+
+                # Empty after sanitisation — LLM returned None, a safety block, or
+                # only meta-commentary that was stripped.  Skip this turn and continue;
+                # don't abort the session over a single bad output.
+                if not persona_message:
+                    logger.warning(
+                        "Session %s turn %d: persona LLM produced empty output "
+                        "(raw %d chars) — skipping turn. Raw prefix: %.120r",
+                        self.session_id,
+                        i,
+                        len(raw_content),
+                        raw_content[:120],
+                    )
+                    continue
 
                 # Agent call
                 t0 = time.monotonic()
@@ -222,10 +283,12 @@ class PersonaSession:
                     llm_response,
                 )
 
-                # Early exit on agent failure
+                # Early exit on agent failure — partial turns already persisted
                 if agent_resp.reply is None:
                     await _mark_session(self.db, self.session_id, status="failed")
-                    break
+                    raise RuntimeError(
+                        f"Session {self.session_id} turn {i}: agent returned no reply"
+                    )
 
             else:
                 await _mark_session(self.db, self.session_id, status="completed")
@@ -291,11 +354,11 @@ async def _upsert_turn(
             },
             "$push": {"turns": _turn_to_dict(turn)},
             "$inc": {
-                "total_usage.prompt_tokens": llm_response.prompt_tokens,
-                "total_usage.completion_tokens": llm_response.completion_tokens,
-                "total_usage.total_tokens": llm_response.total_tokens,
-                "total_usage.cache_read_tokens": llm_response.cache_read_tokens,
-                "total_usage.cache_write_tokens": llm_response.cache_write_tokens,
+                "total_usage.prompt_tokens": llm_response.prompt_tokens or 0,
+                "total_usage.completion_tokens": llm_response.completion_tokens or 0,
+                "total_usage.total_tokens": llm_response.total_tokens or 0,
+                "total_usage.cache_read_tokens": llm_response.cache_read_tokens or 0,
+                "total_usage.cache_write_tokens": llm_response.cache_write_tokens or 0,
             },
         },
         upsert=True,
@@ -321,6 +384,56 @@ def _turn_to_dict(turn: TurnLog) -> dict:
         "latency_ms": turn.latency_ms,
         "created_at": turn.created_at,
     }
+
+
+_META_PREFIX_PATTERNS = (
+    "i'm claude",
+    "i am claude",
+    "as an ai",
+    "as an assistant",
+    "i'm an ai",
+    "i am an ai",
+    "i should clarify",
+    "i need to stay in character",
+    "let me respond as",
+    "let me reframe",
+    "i won't roleplay",
+    "i will not roleplay",
+)
+
+
+def _sanitize_persona_message(text: str, max_chars: int | None) -> str:
+    """Strip meta-commentary preambles and enforce the target's char limit.
+
+    Why: persona LLMs frequently leak safety-reflex preambles ("I'm Claude...",
+    "Let me respond as Chloe would...") and exceed the target agent's input
+    cap. Both make the conversation unusable. We strip leading meta lines and
+    hard-truncate to max_chars before the message reaches the agent.
+    """
+    if not text:
+        return ""
+
+    # Drop leading lines that are clearly meta/stage-direction.
+    lines = text.split("\n")
+    while lines:
+        head = lines[0].strip().lower().lstrip("*_-> ")
+        if not head:
+            lines.pop(0)
+            continue
+        if head.startswith("---"):
+            lines.pop(0)
+            continue
+        if any(head.startswith(p) for p in _META_PREFIX_PATTERNS):
+            lines.pop(0)
+            continue
+        break
+
+    cleaned = "\n".join(lines).strip()
+
+    if max_chars and len(cleaned) > max_chars:
+        cleaned = cleaned[:max_chars].rstrip()
+
+    return cleaned
 
 
 def _extract_secrets(project_config: dict) -> list[str]:

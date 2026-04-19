@@ -8,6 +8,18 @@ class RunCreateRequest(BaseModel):
     test_suite: Literal["standard", "adversarial", "full"] = "standard"
     fail_threshold: int = Field(default=70, ge=0, le=100)
     notify_webhook: AnyHttpUrl | None = None
+    # Optional overrides — when set, these take precedence over the suite defaults.
+    persona_ids: list[str] | None = Field(
+        default=None,
+        description="Explicit persona IDs to run (e.g. ['p1','p4']). Overrides test_suite mapping.",
+        max_length=20,
+    )
+    turns_per_session: int | None = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description="Number of conversation turns per persona session. Defaults to 8.",
+    )
 
 
 class RunCreateResponse(BaseModel):

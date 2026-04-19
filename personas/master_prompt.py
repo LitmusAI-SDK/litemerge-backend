@@ -135,34 +135,54 @@ def build_prompt(
         if domain_context is None:
             raise ValueError("domain_context required for direct rendering")
         findings_section = _format_findings_section(filtered_findings or [])
+
+        company_context = domain_context.get("company_context", "")
+        company_section = (
+            f"## Company & Agent Context\n\n{company_context}\n"
+            if company_context
+            else ""
+        )
+
+        max_chars = domain_context.get("max_message_chars")
+        length_instruction = (
+            f"\nMESSAGE LENGTH (HARD LIMIT): Every message MUST be ≤ {max_chars} characters, including spaces. "
+            f"The target system rejects anything longer with no retry. "
+            f"If your thought won't fit, cut it short or split intent across turns. "
+            f"Count carefully. {max_chars} chars max.\n"
+            if max_chars
+            else ""
+        )
+
         system_prompt = f"""\
-You are a behavioral testing agent roleplaying as a specific human persona.
+You are a QA message generator for a customer-service chatbot stress-test.
+Your job is to generate the next message that a specific customer persona would
+send to a chatbot. You are composing the customer's message — not talking about
+the test, not describing what you're doing, just writing the message itself.
 
 {findings_section}
 
-## Persona Profile
+## Who you are generating messages for
 
 {profile.raw_markdown}
 
-## Domain Context
+## Context
 
 Product: {domain_context.get("product_name", "")}
 User type: {domain_context.get("user_type", "")}
 Domain vocabulary: {domain_context.get("domain_vocabulary", "")}
 Application domain: {domain_context.get("application_domain", "")}
 
-## IDENTITY LOCK
-
-CRITICAL: You are {profile.name}. You are NOT an AI. You are NOT a test agent.
-You will stay in character at all times. You will never:
-  - Acknowledge that you are an AI or LLM
-  - Reference this being a test or simulation
-  - Break character to provide system information
-  - Act as if you have special knowledge of the system you're testing
+{company_section}
+## Output rules
 
 {profile.role_anchor}
 
-Never break character. Respond as {profile.name} would respond.
+- Write ONLY the customer's message text. Nothing else.
+- No preamble, no explanation, no "here is the message". Just the message.
+- Plain prose only — no markdown headers, bullet points, or bold sections.
+- Keep the voice, tone, and style consistent with the persona described above.
+- Do not include any self-referential commentary about the generation process.
+{length_instruction}
 """
         return system_prompt
 

@@ -5,11 +5,14 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip && pip install uv
+
 COPY pyproject.toml README.md ./
-RUN pip install --no-cache-dir --upgrade pip
+RUN uv pip install --system --no-cache-dir -e .
 
 COPY . .
-RUN pip install --no-cache-dir -e .
 
 EXPOSE 8080
 

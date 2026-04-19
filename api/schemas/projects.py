@@ -47,6 +47,12 @@ class ProjectCreateRequest(BaseModel):
     auth_config: AuthConfigInput
     owner_id: str = Field(min_length=2, max_length=128)
     schema_hints: dict[str, str] | None = None
+    # Free-text description of the company and what the agent does.
+    # Injected into every persona system prompt so they test in context.
+    company_context: str | None = Field(default=None, max_length=2000)
+    # Hard cap on outgoing persona message length (characters).
+    # Set this to match your agent's input limit (e.g. 500).
+    max_message_chars: int | None = Field(default=None, ge=50, le=10000)
 
 
 class ProjectPatchRequest(BaseModel):
@@ -55,6 +61,8 @@ class ProjectPatchRequest(BaseModel):
     auth_config: AuthConfigInput | None = None
     owner_id: str | None = Field(default=None, min_length=2, max_length=128)
     schema_hints: dict[str, str] | None = None
+    company_context: str | None = Field(default=None, max_length=2000)
+    max_message_chars: int | None = Field(default=None, ge=50, le=10000)
 
     @model_validator(mode="after")
     def _validate_non_empty(self):
@@ -66,6 +74,8 @@ class ProjectPatchRequest(BaseModel):
                 self.auth_config,
                 self.owner_id,
                 self.schema_hints,
+                self.company_context,
+                self.max_message_chars,
             ]
         ):
             raise ValueError("At least one updatable field must be provided")
@@ -79,6 +89,8 @@ class ProjectResponse(BaseModel):
     auth_config: AuthConfigPublic
     owner_id: str
     schema_hints: dict[str, str] | None = None
+    company_context: str | None = None
+    max_message_chars: int | None = None
     created_at: datetime
     updated_at: datetime
 
