@@ -157,6 +157,20 @@ async def patch_project(
     return _to_project_response(updated)
 
 
+@router.delete("/{project_id}")
+async def delete_project(project_id: str, request: Request) -> dict:
+    api_key_record = getattr(request.state, "api_key_record", {})
+    _ensure_project_access(project_id, api_key_record)
+
+    result = await request.app.state.db["projects"].delete_one({"_id": project_id})
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+
+    return {"deleted": True, "id": project_id}
+
+
 @router.post("/{project_id}/preflight", response_model=PreflightResponse)
 async def preflight_project(project_id: str, request: Request) -> PreflightResponse:
     """Send one neutral probe to the customer's agent and report connectivity health.

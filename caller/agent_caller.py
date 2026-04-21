@@ -27,10 +27,23 @@ DirectLine usage::
     # refreshed without the channel secret — capture a fresh one when it does.
     caller = DirectLineAgentCaller(project_doc)
     result = await caller.send(message="Hello", session_id="sess_abc", history=[])
+
+TMobile usage::
+
+    # T-Mobile /self-service-flex/v1/info-bot-chat endpoint.
+    # Turn 1 body: {"userInput": "..."}.
+    # Turn 2+ body: {"userInput": "...", "conversationId": "<id from turn 1 response>"}.
+    # Reply field: response["content"].
+    # schema_hints = {"caller_type": "tmobile"}
+    # agent_endpoint = "https://<host>/self-service-flex/v1/info-bot-chat"
+    # auth_config = bearer token (JWT).
+    caller = TMobileAgentCaller(project_doc)
+    result = await caller.send(message="Hello", session_id="sess_abc", history=[])
 """
 
 import asyncio
 import base64
+import logging
 import os
 import random
 import time
@@ -39,6 +52,8 @@ from dataclasses import dataclass, field
 import httpx
 
 from core.crypto import decrypt_secret
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_S: float = 30.0
 
@@ -294,8 +309,10 @@ class DirectLineAgentCaller:
             "Authorization": f"Bearer {secret}",
             "Content-Type": "application/json",
         }
+        print(f"[DIRECTLINE] _create_conversation url={url}", flush=True)
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.post(url, headers=headers, json={})
+        print(f"[DIRECTLINE] _create_conversation status={response.status_code} body={response.text[:300]!r}", flush=True)
 
         if response.status_code not in (200, 201):
             raise _DirectLineError(
@@ -388,8 +405,10 @@ class DirectLineAgentCaller:
             "from": {"id": session_id},
             "text": message,
         }
+        print(f"[DIRECTLINE] _post_activity url={url} conv={self._conversation_id}", flush=True)
         async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.post(url, headers=headers, json=body)
+        print(f"[DIRECTLINE] _post_activity status={response.status_code} body={response.text[:300]!r}", flush=True)
 
         if response.status_code not in (200, 201):
             raise _DirectLineError(
@@ -453,9 +472,26 @@ class DirectLineAgentCaller:
             if new_watermark is not None:
                 self._watermark = str(new_watermark)
 
+            activities = data.get("activities", [])
+            # logger.warning(
+            #     "DirectLine poll %d/%d conv=%s watermark=%s: %d activities from.ids=%s types=%s roles=%s",
+            #     attempt + 1, self.MAX_POLL_ATTEMPTS, self._conversation_id, self._watermark,
+            #     len(activities), [a.get("from", {}).get("id") for a in activities],
+            #     [a.get("type") for a in activities], [a.get("from", {}).get("role") for a in activities],
+            # )
+            print(
+                f"[DIRECTLINE] poll {attempt + 1}/{self.MAX_POLL_ATTEMPTS}"
+                f" conv={self._conversation_id} watermark={self._watermark}"
+                f" activities={len(activities)}"
+                f" from.ids={[a.get('from', {}).get('id') for a in activities]}"
+                f" types={[a.get('type') for a in activities]}"
+                f" roles={[a.get('from', {}).get('role') for a in activities]}",
+                flush=True,
+            )
+
             bot_messages = [
                 a
-                for a in data.get("activities", [])
+                for a in activities
                 if a.get("type") == "message"
                 and (
                     a.get("from", {}).get("role") == "bot"
@@ -645,6 +681,174 @@ class _DirectLineError(Exception):
 
 
 # ---------------------------------------------------------------------------
+# TMobile adapter — stateful REST caller for T-Mobile info-bot-chat endpoint
+# ---------------------------------------------------------------------------
+
+
+class TMobileAgentCaller:
+    """Caller for the T-Mobile /self-service-flex/v1/info-bot-chat endpoint.
+
+    T-Mobile requires a set of fixed proprietary headers on every request plus
+    a pre-supplied ``conversationId`` (captured from a real browser session).
+    All of these are configured via ``schema_hints``:
+
+    Required schema_hints keys:
+        ``tmobile_conversation_id``   — conversationId captured from the browser
+        ``tmobile_session_id``        — session-id header value
+        ``tmobile_interaction_id``    — interaction-id header value
+        ``tmobile_activity_id``       — activity-id header value (can reuse interaction-id)
+        ``tmobile_x_auth_originator`` — x-auth-originator header JWT
+        ``tmobile_workflow_id``       — workflow-id (e.g. "UPGRADE")
+        ``tmobile_sub_workflow_id``   — sub-workflow-id (e.g. "Contact Us")
+
+    auth_config must be a bearer token (the Authorization JWT).
+
+    The reply is at ``response["content"]``.
+    """
+
+    # Fixed headers that don't change between sessions
+    _STATIC_HEADERS: dict[str, str] = {
+        "Content-Type": "application/json",
+        "channel-id": "WEB",
+        "application-id": "SDLCC0603210",
+        "origin-application-id": "SDLCC0603210",
+        "ai-chat-lang": "en",
+        "Referer": "https://www.t-mobile.com/contact-us",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/147.0.0.0 Safari/537.36"
+        ),
+        "sec-ch-ua": '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+    }
+
+    def __init__(
+        self, project_config: dict, timeout_s: float = DEFAULT_TIMEOUT_S
+    ) -> None:
+        self._endpoint: str = project_config["agent_endpoint"]
+        self._auth_config: dict = project_config.get("auth_config") or {}
+        self._schema_hints: dict = project_config.get("schema_hints") or {}
+        self._timeout_s = timeout_s
+        # Pre-supplied conversationId from schema_hints — used from turn 1
+        self._conversation_id: str | None = self._schema_hints.get("tmobile_conversation_id") or None
+
+    def _build_headers(self) -> dict[str, str]:
+        import uuid
+        headers: dict[str, str] = dict(self._STATIC_HEADERS)
+
+        # Authorization JWT
+        value_encrypted = self._auth_config.get("value_encrypted")
+        if value_encrypted:
+            secret = decrypt_secret(value_encrypted)
+            headers["Authorization"] = f"Bearer {secret}"
+            headers["x-auth-originator"] = self._schema_hints.get("tmobile_x_auth_originator") or secret
+
+        # Per-session fixed headers from schema_hints
+        if sid := self._schema_hints.get("tmobile_session_id"):
+            headers["session-id"] = sid
+        if iid := self._schema_hints.get("tmobile_interaction_id"):
+            headers["interaction-id"] = iid
+        if wid := self._schema_hints.get("tmobile_workflow_id"):
+            headers["workflow-id"] = wid
+        if swid := self._schema_hints.get("tmobile_sub_workflow_id"):
+            headers["sub-workflow-id"] = swid
+
+        # Per-request generated headers
+        headers["service-transaction-id"] = str(uuid.uuid4())
+        headers["activity-id"] = str(uuid.uuid4())
+        headers["timestamp"] = __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        return headers
+
+    def _build_body(self, message: str) -> dict:
+        body: dict = {"userInput": message}
+        if self._conversation_id is not None:
+            body["conversationId"] = self._conversation_id
+        return body
+
+    async def send(
+        self,
+        message: str,
+        session_id: str,  # noqa: ARG002 — T-Mobile bot is stateful server-side
+        history: list[dict],  # noqa: ARG002
+    ) -> CallerResult:
+        headers = self._build_headers()
+        body = self._build_body(message)
+
+        t0 = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                response = await client.post(self._endpoint, json=body, headers=headers)
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+        except httpx.TimeoutException:
+            latency_ms = self._timeout_s * 1000.0
+            return CallerResult(
+                reply=None,
+                latency_ms=latency_ms,
+                status_code=0,
+                raw_body="",
+                error=f"Request timed out after {self._timeout_s}s",
+            )
+        except httpx.RequestError as exc:
+            latency_ms = (time.perf_counter() - t0) * 1000.0
+            return CallerResult(
+                reply=None,
+                latency_ms=latency_ms,
+                status_code=0,
+                raw_body="",
+                error=f"Request error: {exc}",
+            )
+
+        raw_body = response.text
+        status_code = response.status_code
+
+        if status_code != 200:
+            return CallerResult(
+                reply=None,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                raw_body=raw_body,
+                error=f"Agent returned HTTP {status_code}",
+            )
+
+        try:
+            data = response.json()
+        except Exception:
+            return CallerResult(
+                reply=None,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                raw_body=raw_body,
+                error="Response body is not valid JSON",
+            )
+
+        # Capture conversationId from the first response.
+        if self._conversation_id is None:
+            conv_id = data.get("conversationId")
+            if conv_id:
+                self._conversation_id = str(conv_id)
+
+        reply = data.get("content")
+        if not isinstance(reply, str):
+            return CallerResult(
+                reply=None,
+                latency_ms=latency_ms,
+                status_code=status_code,
+                raw_body=raw_body,
+                error="Response missing expected reply field 'content'",
+            )
+
+        return CallerResult(
+            reply=reply,
+            latency_ms=latency_ms,
+            status_code=status_code,
+            raw_body=raw_body,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Factory — returns the right caller based on schema_hints.caller_type
 # ---------------------------------------------------------------------------
 
@@ -652,16 +856,20 @@ class _DirectLineError(Exception):
 def create_agent_caller(
     project_config: dict,
     timeout_s: float = DEFAULT_TIMEOUT_S,
-) -> "AgentCaller | DirectLineAgentCaller":
+) -> "AgentCaller | DirectLineAgentCaller | TMobileAgentCaller":
     """Return the appropriate caller for the given project configuration.
 
-    If ``schema_hints.caller_type == "directline"``, returns a
-    :class:`DirectLineAgentCaller`; otherwise returns a standard
-    :class:`AgentCaller`.
+    Selects based on ``schema_hints.caller_type``:
+    - ``"directline"`` → :class:`DirectLineAgentCaller`
+    - ``"tmobile"`` → :class:`TMobileAgentCaller`
+    - anything else → :class:`AgentCaller`
     """
     schema_hints: dict = project_config.get("schema_hints") or {}
-    if schema_hints.get("caller_type") == "directline":
+    caller_type = schema_hints.get("caller_type")
+    if caller_type == "directline":
         return DirectLineAgentCaller(project_config, timeout_s=timeout_s)
+    if caller_type == "tmobile":
+        return TMobileAgentCaller(project_config, timeout_s=timeout_s)
     return AgentCaller(project_config, timeout_s=timeout_s)
 
 
@@ -706,7 +914,7 @@ class SimulationAgentCaller:
         timeout_s: float = DEFAULT_TIMEOUT_S,
         mock: bool | None = None,
     ) -> None:
-        self._caller: AgentCaller | DirectLineAgentCaller = create_agent_caller(
+        self._caller: AgentCaller | DirectLineAgentCaller | TMobileAgentCaller = create_agent_caller(
             project_config, timeout_s=timeout_s
         )
         self._mock = mock if mock is not None else _USE_MOCK_AGENT
@@ -721,6 +929,12 @@ class SimulationAgentCaller:
             return self._mock_response()
 
         result = await self._caller.send(message, session_id, history)
+        print(
+            f"[AGENT_CALLER] session={session_id} ok={result.ok}"
+            f" status={result.status_code} error={result.error!r}"
+            f" raw_body={result.raw_body[:300]!r}",
+            flush=True,
+        )
         return AgentResponse(
             reply=result.reply,
             status_code=result.status_code,
