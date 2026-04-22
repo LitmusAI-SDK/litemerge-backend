@@ -64,6 +64,8 @@ async def _execute(run_id: str) -> dict:
 
         project_id = run_doc["project_id"]
         test_suite = run_doc.get("test_suite", "standard")
+        persona_ids_override = run_doc.get("persona_ids")
+        turns_override = run_doc.get("turns_per_session")
 
         # Fetch project doc
         project_doc = await db["projects"].find_one({"_id": project_id})
@@ -79,9 +81,13 @@ async def _execute(run_id: str) -> dict:
             project_config=project_doc,
             db=db,
             redis_client=redis_client,
+            turns_per_session=turns_override or 8,
         )
 
-        summary = await runner.execute(test_suite=test_suite)
+        summary = await runner.execute(
+            test_suite=test_suite,
+            persona_ids_override=persona_ids_override,
+        )
         logger.info("process_run complete run_id=%s summary=%s", run_id, summary)
 
         # Send webhook notification if the run configured one

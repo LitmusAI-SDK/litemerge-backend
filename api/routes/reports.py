@@ -4,7 +4,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from api.schemas.reports import FindingTypeSummary, RunReportResponse
+from api.schemas.reports import (
+    FindingTypeSummary,
+    ReportSessionStatus,
+    RunReportResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +87,32 @@ async def get_report(run_id: str, request: Request) -> RunReportResponse:
         for ft, counts in sorted(type_map.items())
     ]
 
+    # ── Fetch per-session statuses from chat_logs ─────────────────────────────
+    session_cursor = request.app.state.db["chat_logs"].find(
+        {"run_id": run_id},
+        {
+            "persona_id": 1,
+            "persona_name": 1,
+            "persona_type": 1,
+            "status": 1,
+            "turns": 1,
+        },
+    )
+    session_statuses: list[ReportSessionStatus] = []
+    async for sdoc in session_cursor:
+        raw_s = sdoc.get("status", "in_progress")
+        if raw_s not in ("in_progress", "completed", "failed"):
+            raw_s = "in_progress"
+        session_statuses.append(
+            ReportSessionStatus(
+                persona_id=sdoc.get("persona_id", ""),
+                persona_name=sdoc.get("persona_name"),
+                persona_type=sdoc.get("persona_type"),
+                status=raw_s,
+                turns_completed=len(sdoc.get("turns", [])),
+            )
+        )
+
     return RunReportResponse(
         run_id=run_doc["run_id"],
         status=run_doc["status"],
@@ -97,4 +127,5 @@ async def get_report(run_id: str, request: Request) -> RunReportResponse:
         findings_by_severity=findings_by_severity,
         findings_by_type=findings_by_type,
         findings=[_finding_to_dict(f) for f in raw_findings],
+        session_statuses=session_statuses,
     )

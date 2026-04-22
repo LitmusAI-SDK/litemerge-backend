@@ -80,6 +80,8 @@ try:
 
     litellm.openai_key = settings.openai_api_key
     litellm.anthropic_key = settings.anthropic_api_key
+    if settings.anthropic_api_key:
+        os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
     if settings.gemini_api_key:
         # LiteLLM's gemini/ provider reads GEMINI_API_KEY from the environment.
         # Setting litellm.api_key is a generic field and is NOT picked up by

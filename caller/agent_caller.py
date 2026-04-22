@@ -12,10 +12,19 @@ Usage::
 
 DirectLine usage::
 
-    # Set schema_hints = {"caller_type": "directline"} on the project.
-    # agent_endpoint should be the DirectLine base URL, e.g.:
-    #   https://directline.botframework.com
-    # auth_config.value should be the long-lived DirectLine channel secret.
+    # Mode A — channel secret (preferred when available):
+    # schema_hints = {"caller_type": "directline"}
+    # agent_endpoint = "https://directline.botframework.com"
+    # auth_config.value = long-lived DirectLine channel secret.
+    #
+    # Mode B — captured conversation (no channel secret available, e.g. Air India):
+    # schema_hints = {
+    #     "caller_type": "directline",
+    #     "directline_conversation_id": "<conversationId captured from browser>",
+    # }
+    # auth_config.value = the per-conversation Bearer token captured from the
+    # widget's Authorization header.  Token will expire (~1h) and cannot be
+    # refreshed without the channel secret — capture a fresh one when it does.
     caller = DirectLineAgentCaller(project_doc)
     result = await caller.send(message="Hello", session_id="sess_abc", history=[])
 """
@@ -233,17 +242,34 @@ class DirectLineAgentCaller:
     POLL_INTERVAL_S: float = 1.0
     MAX_POLL_ATTEMPTS: int = 30  # 30 s total wait before giving up
     _CONVERSATIONS_PATH: str = "/v3/directline/conversations"
+    _TOKEN_REFRESH_PATH: str = "/v3/directline/tokens/refresh"
 
     def __init__(
         self, project_config: dict, timeout_s: float = DEFAULT_TIMEOUT_S
     ) -> None:
         self._base_url: str = str(project_config["agent_endpoint"]).rstrip("/")
         self._auth_config: dict = project_config.get("auth_config") or {}
+        schema_hints: dict = project_config.get("schema_hints") or {}
         self._timeout_s = timeout_s
         # Session state — populated on first send()
         self._conversation_id: str | None = None
         self._token: str | None = None
         self._watermark: str | None = None
+
+        # Captured-conversation mode: operator supplied a conversationId they
+        # pulled from the browser.  Treat auth_config.value as the per-conversation
+        # Bearer token (NOT a channel secret) and skip _create_conversation.
+        captured_conv_id = schema_hints.get("directline_conversation_id")
+        if captured_conv_id:
+            self._conversation_id = str(captured_conv_id)
+            try:
+                self._token = self._get_secret()
+            except ValueError:
+                # Leave _token as None — send() will surface the error cleanly.
+                self._token = None
+            self._captured_token_mode = True
+        else:
+            self._captured_token_mode = False
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -300,6 +326,48 @@ class DirectLineAgentCaller:
         self._token = token
         self._watermark = None
 
+    async def _refresh_token(self) -> None:
+        """POST /v3/directline/tokens/refresh to extend the current token.
+
+        Used in captured-token mode instead of re-creating the conversation.
+        Updates ``_token`` in place; ``_conversation_id`` and ``_watermark``
+        are preserved.
+
+        Raises:
+            _DirectLineError: if the refresh request fails.
+        """
+        url = f"{self._base_url}{self._TOKEN_REFRESH_PATH}"
+        headers = {"Authorization": f"Bearer {self._token}"}
+        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+            response = await client.post(url, headers=headers)
+
+        if response.status_code not in (200, 201):
+            raise _DirectLineError(
+                f"DirectLine token refresh failed: HTTP {response.status_code}."
+                " Capture a fresh token from the widget and update auth_config.",
+                status_code=response.status_code,
+                raw_body=response.text,
+            )
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise _DirectLineError(
+                "DirectLine token refresh response is not valid JSON",
+                status_code=response.status_code,
+                raw_body=response.text,
+            ) from exc
+
+        new_token = data.get("token")
+        if not new_token:
+            raise _DirectLineError(
+                "DirectLine token refresh response missing token field",
+                status_code=response.status_code,
+                raw_body=response.text,
+            )
+
+        self._token = new_token
+
     async def _post_activity(self, message: str, session_id: str) -> None:
         """POST a message activity to the conversation.
 
@@ -355,11 +423,18 @@ class DirectLineAgentCaller:
             last_raw_body = response.text
 
             if response.status_code in (401, 403):
-                # Auth token expired mid-poll; clear state so next send() call
-                # re-creates the conversation with a fresh token.
-                self._conversation_id = None
-                self._token = None
-                break
+                if self._captured_token_mode:
+                    # Try token refresh and retry the poll immediately.
+                    try:
+                        await self._refresh_token()
+                        continue
+                    except _DirectLineError:
+                        break
+                else:
+                    # Channel-secret mode: clear state so next send() recreates.
+                    self._conversation_id = None
+                    self._token = None
+                    break
 
             if response.status_code != 200:
                 # Other transient error — keep trying.
@@ -381,7 +456,12 @@ class DirectLineAgentCaller:
             bot_messages = [
                 a
                 for a in data.get("activities", [])
-                if a.get("type") == "message" and a.get("from", {}).get("role") == "bot"
+                if a.get("type") == "message"
+                and (
+                    a.get("from", {}).get("role") == "bot"
+                    or not a.get("from", {}).get("id", "").startswith("dl_")
+                )
+                and (a.get("text") or "").strip()
             ]
 
             if bot_messages:
@@ -410,6 +490,20 @@ class DirectLineAgentCaller:
         via ``result.error`` rather than being raised.
         """
         t0 = time.perf_counter()
+
+        # Captured-token mode: conversation was pre-populated from schema_hints.
+        # If the token decryption failed in __init__, surface that now.
+        if self._captured_token_mode and self._token is None:
+            return CallerResult(
+                reply=None,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                status_code=0,
+                raw_body="",
+                error=(
+                    "DirectLine captured-token mode requires auth_config.value_encrypted"
+                    " (the Bearer token captured from the widget)."
+                ),
+            )
 
         # Step 1: create conversation on the first turn
         if self._conversation_id is None:
@@ -447,6 +541,34 @@ class DirectLineAgentCaller:
         try:
             await self._post_activity(message, session_id)
         except _DirectLineError as exc:
+            # In captured-token mode, refresh via /tokens/refresh then retry once.
+            if self._captured_token_mode and exc.status_code in (401, 403):
+                try:
+                    await self._refresh_token()
+                    await self._post_activity(message, session_id)
+                except (
+                    ValueError,
+                    _DirectLineError,
+                    httpx.TimeoutException,
+                    httpx.RequestError,
+                ) as retry_exc:
+                    latency_ms = (time.perf_counter() - t0) * 1000.0
+                    if isinstance(retry_exc, _DirectLineError):
+                        return CallerResult(
+                            reply=None,
+                            latency_ms=latency_ms,
+                            status_code=retry_exc.status_code,
+                            raw_body=retry_exc.raw_body,
+                            error=retry_exc.args[0],
+                        )
+                    return CallerResult(
+                        reply=None,
+                        latency_ms=latency_ms,
+                        status_code=0,
+                        raw_body="",
+                        error=f"Token refresh failed: {retry_exc}",
+                    )
+                # Refresh + retry succeeded — fall through to poll
             if exc.status_code not in (401, 403):
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return CallerResult(

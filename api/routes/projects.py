@@ -45,6 +45,8 @@ def _to_project_response(project_doc: dict) -> ProjectResponse:
         ),
         owner_id=project_doc["owner_id"],
         schema_hints=project_doc.get("schema_hints"),
+        company_context=project_doc.get("company_context"),
+        max_message_chars=project_doc.get("max_message_chars"),
         created_at=project_doc["created_at"],
         updated_at=project_doc["updated_at"],
     )
@@ -72,6 +74,8 @@ async def create_project(
         "auth_config": _auth_storage(payload.auth_config),
         "owner_id": payload.owner_id,
         "schema_hints": payload.schema_hints,
+        "company_context": payload.company_context,
+        "max_message_chars": payload.max_message_chars,
         "created_at": now,
         "updated_at": now,
     }
@@ -130,6 +134,10 @@ async def patch_project(
         update_fields["owner_id"] = payload.owner_id
     if payload.schema_hints is not None:
         update_fields["schema_hints"] = payload.schema_hints
+    if payload.company_context is not None:
+        update_fields["company_context"] = payload.company_context
+    if payload.max_message_chars is not None:
+        update_fields["max_message_chars"] = payload.max_message_chars
     if payload.auth_config is not None:
         update_fields["auth_config"] = _auth_storage(payload.auth_config)
 

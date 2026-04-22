@@ -9,6 +9,14 @@ class FindingTypeSummary(BaseModel):
     by_severity: dict[str, int]
 
 
+class ReportSessionStatus(BaseModel):
+    persona_id: str
+    persona_name: str | None = None
+    persona_type: str | None = None
+    status: str
+    turns_completed: int
+
+
 class RunReportResponse(BaseModel):
     run_id: str
     status: str
@@ -23,3 +31,4 @@ class RunReportResponse(BaseModel):
     findings_by_severity: dict[str, int]
     findings_by_type: list[FindingTypeSummary]
     findings: list[dict]
+    session_statuses: list[ReportSessionStatus] = []

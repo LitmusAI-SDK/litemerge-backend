@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.dependencies import require_bearer_for_docs
 from api.middleware import ApiKeyAuthMiddleware
-from api.routes import findings, health, projects, reports, runs
+from api.routes import export, findings, health, projects, reports, runs
 from core.config import settings
 from db.migrations import run_migrations
 from db.mongodb import (
@@ -67,6 +67,11 @@ app.add_middleware(
 app.include_router(health, prefix="/v1")
 app.include_router(
     runs,
+    prefix="/v1",
+    dependencies=[Depends(require_bearer_for_docs)],
+)
+app.include_router(
+    export,
     prefix="/v1",
     dependencies=[Depends(require_bearer_for_docs)],
 )
